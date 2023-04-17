@@ -1,0 +1,2074 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <math.h>
+
+#include "ss_proto.h"
+#include "ss_proto_can.h"
+#include "sl_api.h"
+#include "utils.h"
+
+// Note: data in modbus array to send over can
+/*
+ FUNCTION CODE,
+ Model ID Hi
+ Model ID Lo
+ Address Offset Hi
+ Address Offset Lo
+ Num of Regs Hi
+ Num of Regs Lo
+*/
+
+int read_cmd = 0;
+
+// DERSettings vars
+short setMaxW = 0;                    // setMaxWValue and setMaxWMultiplier to convert
+unsigned short setMaxChargeRateW = 0; // value and multiplier
+short setMaxVar = 0;                  // value and multiplier
+short setMaxVarNeg = 0;               // value and multipler
+unsigned short setVNom = 0;           // value and multiplier
+unsigned short setVRef = 0;           // value and multipler
+unsigned short setVRefOfs = 0;        // value and multiplier
+unsigned short setMaxV = 0;           // value and multipler
+unsigned short setMinV = 0;           // value and multipler
+int64_t updated_time_dersett = 0;
+
+// 702 scale factors
+short w_sf_702 = 0;
+short pf_sf_702 = 0;
+short va_sf_702 = 0;
+short var_sf_702 = 0;
+short v_sf_702 = 0;
+short a_sf_702 = 0;
+short s_sf_702 = 0;
+
+// 702 parameters for read part1
+unsigned short w_max_rtg_702 = 0;
+unsigned short w_ovr_ext_rtg_702 = 0;
+unsigned short w_ovr_ext_rtg_pf_702 = 0;
+unsigned short w_und_ext_rtg_702 = 0;
+unsigned short w_und_ext_rtg_pf_702 = 0;
+
+unsigned short react_suscept_rtg_702 = 0;
+unsigned short nor_op_cat_rtg_702 = 0;
+unsigned short abn_op_cat_rtg_702 = 0;
+uint32_t ctrl_modes_702 = 0;
+uint32_t sep2_conv_ctrl_modes_702 = 0;
+
+// 702 parameters for write
+short wmax_702 = 0;
+short vamax_702 = 0;
+short wcha_rte_max_702 = 0;
+short vacha_rte_max_702 = 0;
+short wchar_rte_max_702 = 0;
+short var_max_inj_702 = 0;
+short var_max_abs_702 = 0;
+short vnom_702 = 0;
+short vmax_702 = 0;
+short vmin_702 = 0;
+
+bool ES = 0;               // default_derc.base.opmodenergize
+uint32_t ESHzHi = 0;     // default_derc.setESHighFreq
+short ESVHi = 0;               // default_derc.setESHighVolt
+uint32_t ESHzLo = 0;     // default_derc.setESLowFreq
+short ESVLo = 0;               // default_derc.setESLowVolt
+uint32_t ESDlyTms = 0;          //  default_derc.setESDelay
+uint32_t ESRmpTms = 0;         // default_derc.setESRampTms
+short v_sf_703 = 0;
+short hz_sf_703 = 0;
+int default_derc_received = 0; // 1 if recvd
+
+char model_str_001[NUM_MODEL_CHARS+1]; // +1 for zero char at end
+char version_str_001[NUM_VERSION_CHARS+1]; // +1 for zero char at end
+
+// for freqdroop model 711
+uint32_t DbOf = 0;
+uint32_t DbUf = 0;
+uint16_t KOf = 0;
+uint16_t KUf = 0;
+uint16_t RspTms = 0; //  opModFReqDroop.openLoopTms
+int freq_droop_curve_received = 0; // valie is 1 if received
+int freq_droop_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+// for actype model 701
+uint16_t actype_sep2 = 0;
+
+int volt_var_curve_received = 0; // valie is 1 if received
+int volt_var_points_count = 0;
+float volt_var_x[NUM_POINTS_CURVE];
+float volt_var_y[NUM_POINTS_CURVE];
+int volt_var_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+int watt_var_curve_received = 0; // valie is 1 if received
+int watt_var_points_count = 0;
+float watt_var_x[NUM_POINTS_CURVE];
+float watt_var_y[NUM_POINTS_CURVE];
+int watt_var_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+int volt_watt_curve_received = 0; // valie is 1 if received
+int volt_watt_points_count = 0;
+float volt_watt_x[NUM_POINTS_CURVE];
+float volt_watt_y[NUM_POINTS_CURVE];
+int volt_watt_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+int low_volt_trip_curve_received = 0; // valie is 1 if received
+int low_volt_trip_points_count = 0;
+float low_volt_trip_x[NUM_POINTS_CURVE];
+float low_volt_trip_y[NUM_POINTS_CURVE];
+int low_volt_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+int high_volt_trip_curve_received = 0; // valie is 1 if received
+int high_volt_trip_points_count = 0;
+float high_volt_trip_x[NUM_POINTS_CURVE];
+float high_volt_trip_y[NUM_POINTS_CURVE];
+int high_volt_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+int low_freq_trip_curve_received = 0; // valie is 1 if received
+int low_freq_trip_points_count = 0;
+float low_freq_trip_x[NUM_POINTS_CURVE];
+float low_freq_trip_y[NUM_POINTS_CURVE];
+int low_freq_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+int high_freq_trip_curve_received = 0; // valie is 1 if received
+int high_freq_trip_points_count = 0;
+float high_freq_trip_x[NUM_POINTS_CURVE];
+float high_freq_trip_y[NUM_POINTS_CURVE];
+int high_freq_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+
+
+
+// 705 SF
+short v_sf_705 = 0;
+short deptref_sf_705 = 0;
+short rsptms_sf_705 = 0;
+
+// 706 SF
+short v_sf_706 = 0;
+short deptref_sf_706 = 0;
+short rsptms_sf_706 = 0;
+
+// 707 sf
+short v_sf_707 = 0;
+short tms_sf_707 = 0;
+
+// 708 sf
+short v_sf_708 = 0;
+short tms_sf_708 = 0;
+
+// 709 sf
+short hz_sf_709 = 0;
+short tms_sf_709 = 0;
+
+// 710 sf
+short hz_sf_710 = 0;
+short tms_sf_710 = 0;
+
+// 711 sf
+short db_sf_711 = 0;
+short k_sf_711 = 0;
+short rsptms_sf_711 = 0;
+
+// 712 sf
+short w_sf_712 = 0;
+short deptref_sf_712 = 0;
+
+/// 701 sf
+short current_sf_701 = 0;
+short voltage_sf_701 = 0;
+short frequency_sf_701 = 0;
+short activepower_sf_701 = 0;
+short powerfactor_sf_701 = 0;
+short apparentpower_sf_701 = 0;
+short reactivepower_sf_701 = 0;
+
+// 701 params
+short activepower_701_rep = 0;
+short reactivepower_701_rep = 0;
+short voltage_701_rep = 0;
+short frequency_701_rep = 0;
+
+// 701 status
+short status_701 = 0;
+short inv_status_701 = 0;
+short conn_status_701 = 0;
+time_t status_time_701;
+
+
+int verify_message()
+{
+    // loc [0] function code should be 0x67
+    // loc [1] byte count
+    // curr_ss_rx_len = byte count + 2
+    int pkt_len = ss_rx_buf[1];
+    if (ss_rx_buf[0] != READ_REG_CAN_CODE)
+    {
+        return 0;
+    }
+
+    if ((pkt_len + 2) != curr_ss_rx_len)
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+void write_evse_info_part1()
+{
+    // model 702 = 0x02BE
+    // write WMax
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBE);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 26;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count
+    ss_tx_buf[8] = (unsigned char)((wmax_702 & 0xFF00) >> 8);
+    ss_tx_buf[9] = (unsigned char)(wmax_702 & 0xFF);
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+/*
+ * This is to be called to setup registers for performing task id
+ *     SSP_2_0_READ_702_SF
+ */
+void read_scale_factors_model702()
+{
+    // model 702 = 0x02BE
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBE);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 45;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 7;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_2_0_READ_702_SF;
+}
+
+void process_702_sf()
+{
+    if (ss_rx_buf[1] == 14)
+    {
+        // data is verified
+        w_sf_702 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        pf_sf_702 = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        va_sf_702 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+        var_sf_702 = (short)((ss_rx_buf[8] << 8) | ss_rx_buf[9]);
+        v_sf_702 = (short)((ss_rx_buf[10] << 8) | ss_rx_buf[11]);
+        a_sf_702 = (short)((ss_rx_buf[12] << 8) | ss_rx_buf[13]);
+        s_sf_702 = (short)((ss_rx_buf[14] << 8) | ss_rx_buf[15]);
+
+        if ((w_sf_702 < -10) || (w_sf_702 > 10))
+        {
+            printf("incorrent w_sf_702 value recd %d \n", w_sf_702);
+            w_sf_702 = 0;
+        }
+        if ((pf_sf_702 < -10) || (pf_sf_702 > 10))
+        {
+            printf("incorrent pf_sf_702 value recd %d \n", pf_sf_702);
+            pf_sf_702 = 0;
+        }
+        if ((va_sf_702 < -10) || (va_sf_702 > 10))
+        {
+            printf("incorrent va_sf_702 value recd %d \n", va_sf_702);
+            va_sf_702 = 0;
+        }
+        if ((var_sf_702 < -10) || (var_sf_702 > 10))
+        {
+            printf("incorrent var_sf_702 value recd %d \n", var_sf_702);
+            var_sf_702 = 0;
+        }
+        if ((v_sf_702 < -10) || (v_sf_702 > 10))
+        {
+            printf("incorrent v_sf_702 value recd %d \n", v_sf_702);
+            v_sf_702 = 0;
+        }
+        if ((a_sf_702 < -10) || (a_sf_702 > 10))
+        {
+            printf("incorrent a_sf_702 value recd %d \n", a_sf_702);
+            a_sf_702 = 0;
+        }
+        if ((s_sf_702 < -10) || (s_sf_702 > 10))
+        {
+            printf("incorrent s_sf_702 value recd %d \n", s_sf_702);
+            s_sf_702 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 702 sf, expected 14; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_702_nameplate_part1()
+{
+    // model 702 = 0x02BE
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBE);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 5;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_2_1A_READ_702_NAMEPLATE_PART1;
+}
+
+void process_702_nameplate_part1()
+{
+    int tmp_scale; 
+    if (ss_rx_buf[1] == 10)
+    {
+        // data is verified
+        w_max_rtg_702 = (unsigned short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        w_ovr_ext_rtg_702 = (unsigned short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        w_ovr_ext_rtg_pf_702 = (unsigned short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+        w_und_ext_rtg_702 = (unsigned short)((ss_rx_buf[8] << 8) | ss_rx_buf[9]);
+        w_und_ext_rtg_pf_702 = (unsigned short)((ss_rx_buf[10] << 8) | ss_rx_buf[11]);
+    }
+    else
+    {
+        printf("recv length is not adequate for 702 nameplate part1, expected 10; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_702_nameplate_part2()
+{
+    // model 702 = 0x02BE
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBE);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 20;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 5;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_2_1B_READ_702_NAMEPLATE_PART2;
+}
+
+void process_702_nameplate_part2()
+{
+    int tmpi;
+    uint32_t tmp_u32; 
+    if (ss_rx_buf[1] == 10)
+    {
+        // data is verified
+        react_suscept_rtg_702 = (unsigned short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        nor_op_cat_rtg_702 = (unsigned short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        abn_op_cat_rtg_702 = (unsigned short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+        tmp_u32 = (uint32_t)((ss_rx_buf[8] << 8) | ss_rx_buf[9]);
+        ctrl_modes_702 = convertBytesToUint32BigEndian(ss_rx_buf, 10);
+        // ctrl_modes_702 = (uint32_t)((ss_rx_buf[10] << 8) | ss_rx_buf[11]);
+        // ctrl_modes_702 = ctrl_modes_702 + (uint32_t) (tmp_u32 << 16);
+    }
+    else
+    {
+        printf("recv length is not adequate for 702 nameplate part2, expected 10; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_702_config_info()
+{
+    // model 702 = 0x02BE
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBE);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 26;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 15;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_2_2_READ_702_CONFIG_INFO;
+}
+
+void process_702_config_info()
+{
+    int tmpi;
+    uint32_t tmp_u32; 
+    if (ss_rx_buf[1] == 30)
+    {
+        // data is verified
+        wmax_702 = (unsigned short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        vamax_702 = (unsigned short)((ss_rx_buf[12] << 8) | ss_rx_buf[13]);
+        var_max_inj_702 = (unsigned short)((ss_rx_buf[14] << 8) | ss_rx_buf[15]);
+        var_max_abs_702 = (unsigned short)((ss_rx_buf[16] << 8) | ss_rx_buf[17]);
+        wcha_rte_max_702 = (unsigned short)((ss_rx_buf[18] << 8) | ss_rx_buf[19]);
+        vacha_rte_max_702 = (unsigned short)((ss_rx_buf[22] << 8) | ss_rx_buf[23]);
+        vnom_702 = (unsigned short)((ss_rx_buf[26] << 8) | ss_rx_buf[27]);
+        vmax_702 = (unsigned short)((ss_rx_buf[28] << 8) | ss_rx_buf[29]);
+        vmin_702 = (unsigned short)((ss_rx_buf[30] << 8) | ss_rx_buf[31]);
+    }
+    else
+    {
+        printf("recv length is not adequate for 702 config info, expected 30; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_all_703()
+{
+    // model 702 = 0x02BF
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBF);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 16;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_2_3_READ_703_ALL;
+}
+
+void process_all_703()
+{
+    if (ss_rx_buf[1] == 32)
+    {
+        // data is verified
+        ESVHi = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        ESVLo = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        ESHzHi = convertBytesToUint32BigEndian(ss_rx_buf, 6);
+        ESHzLo = convertBytesToUint32BigEndian(ss_rx_buf, 10);
+        ESDlyTms = convertBytesToUint32BigEndian(ss_rx_buf, 14);
+        ESRmpTms = convertBytesToUint32BigEndian(ss_rx_buf, 22);
+        v_sf_703 = (short)((ss_rx_buf[30] << 8) | ss_rx_buf[31]);
+        hz_sf_703 = (short)((ss_rx_buf[32] << 8) | ss_rx_buf[33]);
+
+        if ((v_sf_703 < -10) || (v_sf_703 > 10))
+        {
+            printf("incorrent v_sf_703 value recd %d \n", v_sf_702);
+            v_sf_702 = 0;
+        }
+        if ((hz_sf_703 < -10) || (hz_sf_703 > 10))
+        {
+            printf("incorrent hz_sf_703 value recd %d \n", hz_sf_703);
+            hz_sf_703 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 703 all, expected 32; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_params_001()
+{
+    // model 001 = 0x0001
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x00);
+    ss_tx_buf[2] = (unsigned char)(0x01);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 10;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 16;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_2_5_READ_001_PARAMS;
+}
+
+void process_params_001()
+{
+    if (ss_rx_buf[1] == 32)
+    {
+        // data is verified
+        memset(model_str_001, 0, NUM_MODEL_CHARS+1);
+        mempcpy(model_str_001, &ss_rx_buf[2], NUM_MODEL_CHARS);
+        memset(version_str_001, 0, NUM_VERSION_CHARS);
+        memcpy(version_str_001, &ss_rx_buf[22], NUM_VERSION_CHARS);
+    }
+    else
+    {
+        printf("recv length is not adequate for 001 params, expected 32; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+
+void write_curve_data(int curve_type)
+{
+    float *x_pts;
+    float *y_pts;
+    int *pts_count;
+    int *curve_received;
+
+    if (curve_type == SL_XSD_CURVE_TYPE_VOLT_WATT)
+    {
+        x_pts = &volt_watt_x[0];
+        y_pts = &volt_watt_y[0];
+        pts_count = &volt_watt_points_count;
+        curve_received = &volt_watt_curve_received;
+    }
+    else if (curve_type == SL_XSD_CURVE_TYPE_VOLT_VAR)
+    {
+        x_pts = &volt_var_x[0];
+        y_pts = &volt_var_y[0];
+        pts_count = &volt_var_points_count;
+        curve_received = &volt_var_curve_received;
+    }
+    else if (curve_type == SL_XSD_CURVE_TYPE_WATT_VAR)
+    {
+        x_pts = &watt_var_x[0];
+        y_pts = &watt_var_y[0];
+        pts_count = &watt_var_points_count;
+        curve_received = &watt_var_curve_received;
+    }
+    else if (curve_type == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
+    {
+        x_pts = &low_volt_trip_x[0];
+        y_pts = &low_volt_trip_y[0];
+        pts_count = &low_volt_trip_points_count;
+        curve_received = &low_volt_trip_curve_received;
+    }
+    else if (curve_type == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
+    {
+        x_pts = &high_volt_trip_x[0];
+        y_pts = &high_volt_trip_y[0];
+        pts_count = &high_volt_trip_points_count;
+        curve_received = &high_volt_trip_curve_received;
+    }
+    else if (curve_type == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
+    {
+        x_pts = &low_freq_trip_x[0];
+        y_pts = &low_freq_trip_y[0];
+        pts_count = &low_freq_trip_points_count;
+        curve_received = &low_freq_trip_curve_received;
+    }
+    else if (curve_type == SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP)
+    {
+        x_pts = &high_freq_trip_x[0];
+        y_pts = &high_freq_trip_y[0];
+        pts_count = &high_freq_trip_points_count;
+        curve_received = &high_freq_trip_curve_received;
+    }
+    else
+    {
+        fprintf(stdout, "unsupported curve type %d. Unable to process this curve to send to OBCM \n", curve_type);
+        return;
+    }
+
+}
+
+void write_default_dercontrol_step3()
+{
+    uint32_t tmp_u32;
+    // model 703 = 0x02BF
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBF);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 12;
+    ss_tx_buf[7] = 24; // byte count
+    tmp_u32 = (uint32_t) (ESVHi/pow(10, v_sf_703));
+    ss_tx_buf[8] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+    ss_tx_buf[9] = (unsigned char)(tmp_u32 & 0xFF);
+    tmp_u32 = (uint32_t) (ESVLo/pow(10, v_sf_703));
+    ss_tx_buf[10] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+    ss_tx_buf[11] = (unsigned char)(tmp_u32 & 0xFF);
+    tmp_u32 = (uint32_t) (ESHzHi/pow(10, hz_sf_703));
+    ss_tx_buf[12] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[13] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
+    ss_tx_buf[14] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
+    ss_tx_buf[15] = (unsigned char)(tmp_u32 & 0xFF);
+    tmp_u32 = (uint32_t) (ESHzLo/pow(10, hz_sf_703));
+    ss_tx_buf[16] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[17] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
+    ss_tx_buf[18] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
+    ss_tx_buf[19] = (unsigned char)(tmp_u32 & 0xFF);
+    tmp_u32 = (uint32_t) (ESDlyTms);
+    ss_tx_buf[20] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[21] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
+    ss_tx_buf[22] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
+    ss_tx_buf[23] = (unsigned char)(tmp_u32 & 0xFF);
+    // ESRndTms set to 0xFFFFFFFF
+    ss_tx_buf[24] = 0xFF;
+    ss_tx_buf[25] = 0xFF;
+    ss_tx_buf[26] = 0xFF;
+    ss_tx_buf[27] = 0xFF;
+    tmp_u32 = (uint32_t) (ESRmpTms);
+    ss_tx_buf[28] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[29] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
+    ss_tx_buf[30] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
+    ss_tx_buf[31] = (unsigned char)(tmp_u32 & 0xFF);
+
+    curr_ss_tx_len = 32;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model705()
+{
+    // model 705 = 0x02C1
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC1);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 12;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 3;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_705_SF;
+}
+
+void process_705_sf()
+{
+    if (ss_rx_buf[1] == 6)
+    {
+        // data is verified
+        v_sf_705 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        deptref_sf_705 = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        rsptms_sf_705 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((v_sf_705 < -10) || (v_sf_705 > 10))
+        {
+            printf("incorrent v_sf_705 value recd %d \n", v_sf_705);
+            v_sf_705 = 0;
+        }
+        if ((deptref_sf_705 < -10) || (deptref_sf_705 > 10))
+        {
+            printf("incorrent deptref_sf_705 value recd %d \n", deptref_sf_705);
+            deptref_sf_705 = 0;
+        }
+        if ((rsptms_sf_705 < -10) || (rsptms_sf_705 > 10))
+        {
+            printf("incorrent rsptms_sf_705 value recd %d \n", rsptms_sf_705);
+            rsptms_sf_705 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 705 sf, expected 6; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_volt_var_curve_705_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 705 = 0x02C1
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC1);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 85;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) 2*volt_var_points_count;
+    ss_tx_buf[7] = 2*volt_var_points_count * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
+
+    for (ii=0; ii < volt_var_points_count; ii++) 
+    {
+        tmp_u32 = (tmp_u32) (volt_var_y[ii] / Math.pow(10, v_sf_705));
+        ss_tx_buf[8+4*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+4*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
+        tmp_i32 = (tmp_i32) (volt_var_x[ii] / Math.pow(10, deptref_sf_705));
+        ss_tx_buf[8+4*ii+2] = (unsigned char)((tmp_i32 & 0xFF00) >> 8);
+        ss_tx_buf[8+4*ii+3] = (unsigned char)(tmp_i32 & 0xFF) ;
+    }
+    curr_ss_tx_len = 2* volt_var_points_count *2 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_volt_var_curve_705_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 705 = 0x02C1
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC1);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 705
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_volt_var_curve_705_step3()
+{
+    // model 705 = 0x02C1
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC1);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_705_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_volt_var_curve_705_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        volt_var_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when volt_var_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_705_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 705 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_volt_var_curve_705_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 705 = 0x02C1
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC1);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+
+void read_scale_factors_model706()
+{
+    // model 706 = 0x02C2
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC2);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 12;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 3;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_706_SF;
+}
+
+void process_706_sf()
+{
+    if (ss_rx_buf[1] == 6)
+    {
+        // data is verified
+        v_sf_706 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        deptref_sf_706 = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        rsptms_sf_706 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((v_sf_706 < -10) || (v_sf_706 > 10))
+        {
+            printf("incorrent v_sf_706 value recd %d \n", v_sf_706);
+            v_sf_706 = 0;
+        }
+        if ((deptref_sf_706 < -10) || (deptref_sf_706 > 10))
+        {
+            printf("incorrent deptref_sf_706 value recd %d \n", deptref_sf_706);
+            deptref_sf_706 = 0;
+        }
+        if ((rsptms_sf_706 < -10) || (rsptms_sf_706 > 10))
+        {
+            printf("incorrent rsptms_sf_706 value recd %d \n", rsptms_sf_706);
+            rsptms_sf_706 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 706 sf, expected 6; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_volt_watt_curve_706_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 706 = 0x02C2
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC2);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 70;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) 2*volt_watt_points_count;
+    ss_tx_buf[7] = 2*volt_watt_points_count * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
+
+    for (ii=0; ii < 2*volt_watt_points_count; ii++) 
+    {
+        tmp_u32 = (tmp_u32) (volt_watt_y[ii] / Math.pow(10, v_sf_706));
+        ss_tx_buf[8+4*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+4*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
+        tmp_i32 = (tmp_i32) (volt_watt_x[ii] / Math.pow(10, deptref_sf_706));
+        ss_tx_buf[8+4*ii+2] = (unsigned char)((tmp_i32 & 0xFF00) >> 8);
+        ss_tx_buf[8+4*ii+3] = (unsigned char)(tmp_i32 & 0xFF) ;
+    }
+    curr_ss_tx_len = 2* volt_watt_points_count *2 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_volt_watt_curve_706_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 706 = 0x02C2
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC2);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 706
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_volt_watt_curve_706_step3()
+{
+    // model 706 = 0x02C2
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC2);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_706_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_volt_watt_curve_706_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        volt_watt_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when volt_watt_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_706_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 706 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_volt_watt_curve_706_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 706 = 0x02C2
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC2);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model707()
+{
+    // model 707 = 0x02C3
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC3);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 7;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 2;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_707_SF;
+}
+
+void process_707_sf()
+{
+    if (ss_rx_buf[1] == 4)
+    {
+        // data is verified
+        v_sf_707 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        tms_sf_707 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((v_sf_707 < -10) || (v_sf_707 > 10))
+        {
+            printf("incorrent v_sf_707 value recd %d \n", v_sf_707);
+            v_sf_707 = 0;
+        }
+        if ((tms_sf_707 < -10) || (tms_sf_707 > 10))
+        {
+            printf("incorrent tms_sf_707 value recd %d \n", tms_sf_707);
+            tms_sf_707 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 707 sf, expected 4; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_low_volt_trip_curve_707_step3()
+{
+    uint32_t tmp_u32;
+    int ii;
+    // model 707 = 0x02C3
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC3);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 109;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) 3*low_volt_trip_points_count;
+    ss_tx_buf[7] = 2*low_volt_trip_points_count * 3; // byte count = num pts (x,y) * 2 bytes per x or y point
+
+    for (ii=0; ii < 2*low_volt_trip_points_count; ii++) 
+    {
+        tmp_u32 = (tmp_u32) (low_volt_trip_y[ii] / Math.pow(10, v_sf_707));
+        ss_tx_buf[8+6*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+6*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
+        tmp_u32 = (tmp_u32) (low_volt_trip_x[ii] / Math.pow(10, tms_sf_707));
+        ss_tx_buf[8+6*ii+2] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+        ss_tx_buf[8+6*ii+3] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+        ss_tx_buf[8+6*ii+4] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+6*ii+5] = (unsigned char)(tmp_u32 & 0xFF) ;
+    }
+    curr_ss_tx_len = 2* low_volt_trip_points_count *3 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_low_volt_trip_curve_707_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 707 = 0x02C3
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC3);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 707
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_low_volt_trip_curve_707_step3()
+{
+    // model 707 = 0x02C3
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC3);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_707_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_low_volt_trip_curve_707_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        low_volt_trip_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when low_volt_trip_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_707_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 707 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_low_volt_trip_curve_707_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 707 = 0x02C3
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC3);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model708()
+{
+    // model 708 = 0x02C4
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC4);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 7;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 2;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_708_SF;
+}
+
+void process_708_sf()
+{
+    if (ss_rx_buf[1] == 4)
+    {
+        // data is verified
+        v_sf_708 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        tms_sf_708 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((v_sf_708 < -10) || (v_sf_708 > 10))
+        {
+            printf("incorrent v_sf_708 value recd %d \n", v_sf_708);
+            v_sf_708 = 0;
+        }
+        if ((tms_sf_708 < -10) || (tms_sf_708 > 10))
+        {
+            printf("incorrent tms_sf_708 value recd %d \n", tms_sf_708);
+            tms_sf_708 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 708 sf, expected 4; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_high_volt_trip_curve_708_step3()
+{
+    uint32_t tmp_u32;
+    int ii;
+    // model 708 = 0x02C4
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC4);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 109;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) 3*high_volt_trip_points_count;
+    ss_tx_buf[7] = 2*high_volt_trip_points_count * 3; // byte count = num pts (x,y) * 2 bytes per x or y point
+
+    for (ii=0; ii < 2*high_volt_trip_points_count; ii++) 
+    {
+        tmp_u32 = (tmp_u32) (high_volt_trip_y[ii] / Math.pow(10, v_sf_708));
+        ss_tx_buf[8+6*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+6*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
+        tmp_u32 = (tmp_u32) (high_volt_trip_x[ii] / Math.pow(10, tms_sf_708));
+        ss_tx_buf[8+6*ii+2] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+        ss_tx_buf[8+6*ii+3] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+        ss_tx_buf[8+6*ii+4] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+6*ii+5] = (unsigned char)(tmp_u32 & 0xFF) ;
+    }
+    curr_ss_tx_len = 2* high_volt_trip_points_count *3 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_high_volt_trip_curve_708_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 708 = 0x02C4
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC4);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 708
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_high_volt_trip_curve_708_step3()
+{
+    // model 708 = 0x02C4
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC4);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_708_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_high_volt_trip_curve_708_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        high_volt_trip_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when high_volt_trip_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_708_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 708 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_high_volt_trip_curve_708_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 708 = 0x02C4
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC4);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model709()
+{
+    // model 709 = 0x02C5
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC5);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 7;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 2;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_709_SF;
+}
+
+void process_709_sf()
+{
+    if (ss_rx_buf[1] == 4)
+    {
+        // data is verified
+        hz_sf_709 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        tms_sf_709 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((hz_sf_709 < -10) || (hz_sf_709 > 10))
+        {
+            printf("incorrent hz_sf_709 value recd %d \n", hz_sf_709);
+            hz_sf_709 = 0;
+        }
+        if ((tms_sf_709 < -10) || (tms_sf_709 > 10))
+        {
+            printf("incorrent tms_sf_709 value recd %d \n", tms_sf_709);
+            tms_sf_709 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 709 sf, expected 4; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_low_freq_trip_curve_709_step3()
+{
+    uint32_t tmp_u32;
+    int ii;
+    // model 709 = 0x02C5
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC5);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 139;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) (4*low_freq_trip_points_count);
+    ss_tx_buf[7] = 2*low_freq_trip_points_count * 4; // byte count = num pts (x,y) * 4 bytes per x or y point
+
+    for (ii=0; ii < 2*low_freq_trip_points_count; ii++) 
+    {
+        tmp_u32 = (tmp_u32) (low_freq_trip_y[ii] / Math.pow(10, hz_sf_709));
+        ss_tx_buf[8+8*ii] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+        ss_tx_buf[8+8*ii+1] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+        ss_tx_buf[8+8*ii+2] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+8*ii+3] = (unsigned char)(tmp_u32 & 0xFF) ;
+
+        tmp_u32 = (tmp_u32) (low_freq_trip_x[ii] / Math.pow(10, tms_sf_709));
+        ss_tx_buf[8+8*ii+4] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+        ss_tx_buf[8+8*ii+5] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+        ss_tx_buf[8+8*ii+6] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+8*ii+7] = (unsigned char)(tmp_u32 & 0xFF) ;
+    }
+    curr_ss_tx_len = 2* low_freq_trip_points_count *4 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_low_freq_trip_curve_709_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 709 = 0x02C5
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC5);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 709
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_low_freq_trip_curve_709_step3()
+{
+    // model 709 = 0x02C5
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC5);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_709_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_low_freq_trip_curve_709_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        low_freq_trip_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when low_freq_trip_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_709_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 709 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_low_freq_trip_curve_709_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 709 = 0x02C5
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC5);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model710()
+{
+    // model 710 = 0x02C6
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC6);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 7;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 2;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_710_SF;
+}
+
+void process_710_sf()
+{
+    if (ss_rx_buf[1] == 4)
+    {
+        // data is verified
+        hz_sf_710 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        tms_sf_710 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((hz_sf_710 < -10) || (hz_sf_710 > 10))
+        {
+            printf("incorrent hz_sf_710 value recd %d \n", hz_sf_710);
+            hz_sf_710 = 0;
+        }
+        if ((tms_sf_710 < -10) || (tms_sf_710 > 10))
+        {
+            printf("incorrent tms_sf_710 value recd %d \n", tms_sf_710);
+            tms_sf_710 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 710 sf, expected 4; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_high_freq_trip_curve_710_step3()
+{
+    uint32_t tmp_u32;
+    int ii;
+    // model 710 = 0x02C6
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC6);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 139;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) 4*high_freq_trip_points_count;
+    ss_tx_buf[7] = 2*high_freq_trip_points_count * 4; // byte count = num pts (x,y) * 4 bytes per x or y point
+
+    for (ii=0; ii < 2*high_freq_trip_points_count; ii++) 
+    {
+        tmp_u32 = (tmp_u32) (high_freq_trip_y[ii] / Math.pow(10, hz_sf_710));
+        ss_tx_buf[8+8*ii] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+        ss_tx_buf[8+8*ii+1] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+        ss_tx_buf[8+8*ii+2] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+8*ii+3] = (unsigned char)(tmp_u32 & 0xFF) ;
+
+        tmp_u32 = (tmp_u32) (high_freq_trip_x[ii] / Math.pow(10, tms_sf_710));
+        ss_tx_buf[8+8*ii+4] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+        ss_tx_buf[8+8*ii+5] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+        ss_tx_buf[8+8*ii+6] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+        ss_tx_buf[8+8*ii+7] = (unsigned char)(tmp_u32 & 0xFF) ;
+    }
+    curr_ss_tx_len = 2* high_freq_trip_points_count *4 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_high_freq_trip_curve_710_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 710 = 0x02C6
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC6);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 710
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_high_freq_trip_curve_710_step3()
+{
+    // model 710 = 0x02C6
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC6);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_710_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_high_freq_trip_curve_710_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        high_freq_trip_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when high_freq_trip_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_710_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 710 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_high_freq_trip_curve_710_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 710 = 0x02C6
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC6);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model711()
+{
+    // model 711 = 0x02C7
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC7);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 11;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 3;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_711_SF;
+}
+
+void process_711_sf()
+{
+    if (ss_rx_buf[1] == 6)
+    {
+        // data is verified
+        db_sf_711 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        k_sf_711 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+        rsptms_sf_711 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((db_sf_711 < -10) || (db_sf_711 > 10))
+        {
+            printf("incorrent db_sf_711 value recd %d \n", db_sf_711);
+            db_sf_711 = 0;
+        }
+        if ((k_sf_711 < -10) || (k_sf_711 > 10))
+        {
+            printf("incorrent k_sf_711 value recd %d \n", k_sf_711);
+            k_sf_711 = 0;
+        }
+        if ((rsptms_sf_711 < -10) || (rsptms_sf_711 > 10))
+        {
+            printf("incorrent rsptms_sf_711 value recd %d \n", rsptms_sf_711);
+            rsptms_sf_711 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 711 sf, expected 6; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_freq_droop_curve_711_step3()
+{
+    uint32_t tmp_u32;
+    uint16_t tmp_u16;
+    // model 711 = 0x02C7
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC7);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 34;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 8;
+    ss_tx_buf[7] = 16; // byte count
+    tmp_u32 = (uint32_t) (DbOf / Math.pow(10,db_sf_711)); 
+    ss_tx_buf[8] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[9] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+    ss_tx_buf[10] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+    ss_tx_buf[11] = (unsigned char)(tmp_u32 & 0xFF) ;
+    tmp_u32 = (uint32_t)(DbUf / Math.pow(10,db_sf_711));
+    ss_tx_buf[12] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[13] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+    ss_tx_buf[14] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+    ss_tx_buf[15] = (unsigned char)(tmp_u32 & 0xFF) ;
+    tmp_u16 = (uint16_t) (KOf / Math.pow(10, k_sf_711));
+    ss_tx_buf[16] = (unsigned char)((tmp_u16 & 0xFF00) >> 8);
+    ss_tx_buf[17] = (unsigned char)(tmp_u16 & 0xFF) ;
+    tmp_u16 = (uint16_t) (KUf / Math.pow(10, k_sf_711));
+    ss_tx_buf[18] = (unsigned char)((tmp_u16 & 0xFF00) >> 8);
+    ss_tx_buf[19] = (unsigned char)(tmp_u16 & 0xFF) ;
+    tmp_u32 = (uint32_t) (RspTms / Math.pow(10, rsptms_sf_711));
+    ss_tx_buf[20] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
+    ss_tx_buf[21] = (unsigned char)((tmp_u32 & 0xFF0000) >> 16);
+    ss_tx_buf[22] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
+    ss_tx_buf[23] = (unsigned char)(tmp_u32 & 0xFF) ;
+
+
+    curr_ss_tx_len = 24 ;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_freq_droop_curve_711_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 711 = 0x02C7
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC7);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 711
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_freq_droop_curve_711_step3()
+{
+    // model 711 = 0x02C7
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC7);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_711_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_freq_droop_curve_711_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        freq_droop_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when freq_droop_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_711_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 711 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_enable_freq_droop_curve_711_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 711 = 0x02C7
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC7);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_scale_factors_model712()
+{
+    // model 712 = 0x02C8
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC8);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 12;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 2;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_712_SF;
+}
+
+void process_712_sf()
+{
+    if (ss_rx_buf[1] == 4)
+    {
+        // data is verified
+        w_sf_712 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        deptref_sf_712 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+
+        if ((w_sf_712 < -10) || (w_sf_712 > 10))
+        {
+            printf("incorrent w_sf_712 value recd %d \n", w_sf_712);
+            w_sf_712 = 0;
+        }
+        if ((deptref_sf_712 < -10) || (deptref_sf_712 > 10))
+        {
+            printf("incorrent deptref_sf_712 value recd %d \n", deptref_sf_712);
+            deptref_sf_712 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 712 sf, expected 4; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void write_watt_var_curve_712_step3()
+{
+    int32_t tmp_i32;
+    int ii;
+    // model 712 = 0x02C8
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC8);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 66;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = (unsigned char) 2*watt_var_points_count;
+    ss_tx_buf[7] = 2*watt_var_points_count * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
+
+    for (ii=0; ii < 2*watt_var_points_count; ii++) 
+    {
+        tmp_i32 = (tmp_i32) (watt_var_y[ii] / Math.pow(10, w_sf_712));
+        ss_tx_buf[8+4*ii] = (unsigned char)((tmp_i32 & 0xFF00) >> 8);
+        ss_tx_buf[8+4*ii+1] = (unsigned char)(tmp_i32 & 0xFF0000);
+
+        tmp_i32 = (tmp_i32) (watt_var_x[ii] / Math.pow(10, deptref_sf_712));
+        ss_tx_buf[8+4*ii+3] = (unsigned char)((tmp_i32 & 0xFF00) >> 8);
+        ss_tx_buf[8+4*ii+4] = (unsigned char)(tmp_i32 & 0xFF);
+    }
+    curr_ss_tx_len = 2* watt_var_points_count *2 + 8;
+    read_cmd = READ_NONE;
+}
+
+void write_verify_req_watt_var_curve_712_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 712 = 0x02C8
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC8);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 3; // third curve verify in model 712
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_verify_resp_watt_var_curve_712_step3()
+{
+    // model 712 = 0x02C8
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC8);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 4;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_3_READ_712_CURVE_VERIFY_RESP;
+}
+
+void process_verify_resp_watt_var_curve_712_step3()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // 0 => in progress
+        // 1 => completed : success
+        // 2 => failed 
+        watt_var_curve_verify = (int) ss_rx_buf[3];
+        // TODO: Action to take when watt_var_curve_verify == failed
+        // TODO: if value is 1, write SSP_3_WRITE_712_CURVE_ENABLE  to top of queue
+    }
+    else
+    {
+        printf("recv length is not adequate for 712 verify curve, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_scale_factors_model701()
+{
+    // model 701 = 0x02BD
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBD);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 113;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 7;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_4_2_READ_701_SF;
+}
+
+void process_701_sf()
+{
+    if (ss_rx_buf[1] == 14)
+    {
+        // data is verified
+        current_sf_701 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        voltage_sf_701 = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        frequency_sf_701 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+        activepower_sf_701 = (short)((ss_rx_buf[8] << 8) | ss_rx_buf[9]);
+        powerfactor_sf_701 = (short)((ss_rx_buf[10] << 8) | ss_rx_buf[11]);
+        apparentpower_sf_701 = (short)((ss_rx_buf[12] << 8) | ss_rx_buf[13]);
+        reactivepower_sf_701 = (short)((ss_rx_buf[14] << 8) | ss_rx_buf[15]);
+
+        if ((current_sf_701 < -10) || (current_sf_701 > 10))
+        {
+            printf("incorrent current_sf_701 value recd %d \n", current_sf_701);
+            current_sf_701 = 0;
+        }
+        if ((voltage_sf_701 < -10) || (voltage_sf_701 > 10))
+        {
+            printf("incorrent voltage_sf_701 value recd %d \n", voltage_sf_701);
+            voltage_sf_701 = 0;
+        }
+        if ((frequency_sf_701 < -10) || (frequency_sf_701 > 10))
+        {
+            printf("incorrent frequency_sf_701 value recd %d \n", frequency_sf_701);
+            frequency_sf_701 = 0;
+        }
+        if ((activepower_sf_701 < -10) || (activepower_sf_701 > 10))
+        {
+            printf("incorrent activepower_sf_701 value recd %d \n", activepower_sf_701);
+            activepower_sf_701 = 0;
+        }
+        if ((powerfactor_sf_701 < -10) || (powerfactor_sf_701 > 10))
+        {
+            printf("incorrent powerfactor_sf_701 value recd %d \n", powerfactor_sf_701);
+            powerfactor_sf_701 = 0;
+        }
+        if ((apparentpower_sf_701 < -10) || (apparentpower_sf_701 > 10))
+        {
+            printf("incorrent apparentpower_sf_701 value recd %d \n", apparentpower_sf_701);
+            apparentpower_sf_701 = 0;
+        }
+        if ((reactivepower_sf_701 < -10) || (reactivepower_sf_701 > 10))
+        {
+            printf("incorrent reactivepower_sf_701 value recd %d \n", reactivepower_sf_701);
+            reactivepower_sf_701 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 701 sf, expected 14; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_actype_model701()
+{
+    // model 701 = 0x02BD
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBD);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_4_3_READ_701_ACTYPE;
+}
+
+void process_701_actype()
+{
+    if (ss_rx_buf[1] == 2)
+    {
+        // data is verified
+        if (ss_rx_buf[3] == 0)  
+        {
+            actype_sep2 = 129;
+        }
+        else if (ss_rx_buf[3] == 1)
+        {
+            actype_sep2 = 132;
+        }
+        else if (ss_rx_buf[3] == 2)
+        {
+            actype_sep2 = 224;
+        }
+        else 
+        {
+            actype_sep2 = 0;
+        }
+    }
+    else
+    {
+        printf("recv length is not adequate for 701 ac type, expected 2; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+
+void write_enable_watt_var_curve_712_step3()
+{
+    int32_t tmp_i32;
+    uint32_t tmp_u32;
+    int ii;
+    // model 712 = 0x02C8
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xC8);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count 
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = 1; // enable set to 1
+
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void write_es_status_default_dercontrol_step5()
+{
+    //uint32_t tmp_u32;
+    // model 703 = 0x02BF
+    ss_tx_buf[0] = (unsigned char)WRITE_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBF);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 2;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 1;
+    ss_tx_buf[7] = 2; // byte count
+
+    ss_tx_buf[8] = 0x00;
+    ss_tx_buf[9] = ES;
+    
+    curr_ss_tx_len = 10;
+    read_cmd = READ_NONE;
+}
+
+void read_params_model701()
+{
+    // model 701 = 0x02BD
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBD);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 10;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 8;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_6_1_READ_701_REPORT_VALUE;
+}
+
+void process_701_params()
+{
+    if (ss_rx_buf[1] == 16)
+    {
+        // data is verified
+        activepower_701_rep = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        reactivepower_701_rep = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        voltage_701_rep = (short)((ss_rx_buf[12] << 8) | ss_rx_buf[13]);
+        frequency_701_rep = (short)((ss_rx_buf[16] << 8) | ss_rx_buf[17]);
+    }
+    else
+    {
+        printf("recv length is not adequate for 701 params, expected 16; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+void read_status_model701()
+{
+    // model 701 = 0x02BD
+    ss_tx_buf[0] = (unsigned char)READ_REG_CAN_CODE;
+    ss_tx_buf[1] = (unsigned char)(0x02);
+    ss_tx_buf[2] = (unsigned char)(0xBD);
+    ss_tx_buf[3] = 0x00;
+    ss_tx_buf[4] = 3;
+    ss_tx_buf[5] = 0x00;
+    ss_tx_buf[6] = 3;
+    curr_ss_tx_len = 7;
+    read_cmd = SSP_6_2_READ_701_STATUS_VALUE;
+}
+
+void process_701_status()
+{
+    if (ss_rx_buf[1] == 6)
+    {
+        // data is verified
+        status_701 = (short)((ss_rx_buf[2] << 8) | ss_rx_buf[3]);
+        inv_status_701 = (short)((ss_rx_buf[4] << 8) | ss_rx_buf[5]);
+        conn_status_701 = (short)((ss_rx_buf[6] << 8) | ss_rx_buf[7]);
+        status_time_701 = getCurrentTime();
+    }
+    else
+    {
+        printf("recv length is not adequate for 701 status, expected 6; got = %d \n", ss_rx_buf[1]);
+    }
+}
+
+
+
+void process_recv_message_ssproto()
+{
+    if (read_cmd == READ_NONE)
+    {
+        return;
+    }
+
+    if (verify_message())
+    {
+        switch (read_cmd)
+        {
+        case SSP_2_0_READ_702_SF:
+            process_702_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_2_1A_READ_702_NAMEPLATE_PART1:
+            process_702_nameplate_part1();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_2_1B_READ_702_NAMEPLATE_PART2:
+            process_702_nameplate_part2();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_2_2_READ_702_CONFIG_INFO:
+            process_702_config_info();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_2_3_READ_703_ALL:
+            process_all_703();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_2_5_READ_001_PARAMS:
+            process_params_001();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_705_SF:
+            process_705_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_705_CURVE_VERIFY_RESP:
+            process_verify_resp_volt_var_curve_705_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_706_SF:
+            process_706_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_706_CURVE_VERIFY_RESP:
+            process_verify_resp_volt_watt_curve_706_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_707_SF:
+            process_707_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_707_CURVE_VERIFY_RESP:
+            process_verify_resp_low_volt_trip_curve_707_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_708_SF:
+            process_708_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_708_CURVE_VERIFY_RESP:
+            process_verify_resp_high_volt_trip_curve_708_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_709_SF:
+            process_709_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_709_CURVE_VERIFY_RESP:
+            process_verify_resp_low_freq_trip_curve_709_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_710_SF:
+            process_710_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_710_CURVE_VERIFY_RESP:
+            process_verify_resp_high_freq_trip_curve_710_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_711_SF:
+            process_709_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_711_CURVE_VERIFY_RESP:
+            process_verify_resp_freq_droop_curve_711_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_712_SF:
+            process_712_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_3_READ_712_CURVE_VERIFY_RESP:
+            process_verify_resp_watt_var_curve_712_step3();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_4_2_READ_701_SF:
+            process_701_sf();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_4_3_READ_701_ACTYPE:
+            process_701_actype();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_6_1_READ_701_REPORT_VALUE:
+            process_701_params();
+            read_cmd = READ_NONE;
+            break;
+        case SSP_6_2_READ_701_STATUS_VALUE:
+            process_701_status();
+            read_cmd = READ_NONE;
+            break;
+        }
+    }
+}
+
