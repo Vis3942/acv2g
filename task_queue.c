@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <time.h>
 
+#include "utils.h"
+
 // to test this file independently, uncomment the next define
 //#define TEST_THIS_FILE  1
 
@@ -98,7 +100,8 @@ int dequeue () // returns -1 on error
     int tmpi;
 
     if (!tail_q1) {
-        fprintf (stderr, "Queue is empty\n");
+        // fprintf (stderr, "Queue is empty\n");
+        console_log ("Queue is empty\n");
         return -1;
     }
     // get the head
@@ -170,7 +173,8 @@ int dequeue_2 () // returns -1 on error
     int tmpi;
 
     if (!tail_q2) {
-        fprintf (stderr, "Queue is empty\n");
+        //fprintf (stderr, "Queue is empty\n");
+        console_log ("Queue 2 is empty\n");
         return -1;
     }
     // get the head

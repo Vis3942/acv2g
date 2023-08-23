@@ -3,6 +3,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <stdlib.h>
+#include <unistd.h>
+
+#include "usock_utils.h"
 
 char *sep2_usock_path = "/tmp/can2sep2";
 

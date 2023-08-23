@@ -6,4 +6,6 @@ void can_open ();
 void send_test_can();
 void send_test_can_messages();
 
+extern int can_socket;
+
 #endif // CAN_H

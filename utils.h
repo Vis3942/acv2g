@@ -1,6 +1,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <stdint.h>
+
 // version definition => byte major version.byte minor version 
 #define VERSION 0x0100 // version 1.0
 #define ISMN_MF_MODEL "A142C4Pacifica15.5kWVersion21301" // do not use this use what is read from OBCM
@@ -15,6 +17,7 @@ int console_log(char *message,...);
 void version();
 uint32_t convertBytesToUint32BigEndian(unsigned char *bytes, int start_idx);
 time_t getCurrentTime();
+void displayTime();
 
 #endif // UTILS_H
 

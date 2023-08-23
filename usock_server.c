@@ -4,6 +4,8 @@
 #include <sys/un.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdint.h>
+
 #include "usock_utils.h"
 
 char *sep2_client2server_path = "/tmp/client2server";
@@ -20,6 +22,7 @@ void register_process_messages_callback(void (*ptr)( char *buffer, int size ))
   //debug
   printf("in register callback \n");
   process_messages = ptr;
+  printf("finished register call back assign \n");
 }
 
 void usock_client2server_open()
@@ -38,7 +41,7 @@ void usock_client2server_open()
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, sep2_client2server_path, sizeof(addr.sun_path)-1);
 
-  //async_enable(cli2srv_usock_fd, 0);
+  async_enable(cli2srv_usock_fd, 0);
 
   if (bind(cli2srv_usock_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1  ) 
   {
@@ -90,7 +93,7 @@ void usock_client2server_accept()
     usock_client2server_connection_close();
   }
   conn_cli2srv_usock_fd = tmp_fd;
-  //async_enable(conn_cli2srv_usock_fd, 0);
+  async_enable(conn_cli2srv_usock_fd, 0);
   
 }
 
@@ -116,7 +119,8 @@ void usock_client2server_read_message()
     // process the message
     if (process_messages != NULL) {
       // debug
-      printf("processing message at %0xld\n", process_messages);
+      //printf("processing message at %0xld\n", process_messages);
+      printf("processing message \n");
       (*process_messages)(rd_buf, n);
     }
   }
@@ -142,7 +146,7 @@ void usock_server2client_open()
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, sep2_server2client_path, sizeof(addr.sun_path)-1);
 
-  //async_enable(srv2cli_usock_fd, 0);
+  async_enable(srv2cli_usock_fd, 0);
 
   if (bind(srv2cli_usock_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1  ) 
   {
@@ -176,7 +180,7 @@ void usock_server2client_accept()
     conn_srv2cli_usock_fd = -1;
   }
   conn_srv2cli_usock_fd = tmp_fd;
-  //async_enable(conn_srv2cli_usock_fd, 0);
+  async_enable(conn_srv2cli_usock_fd, 0);
   
 }
 
@@ -226,7 +230,7 @@ void usock_init() {
 void usock_message_handler () {
   //struct timeval timeout = {0};
   int select_sts;
-   sigset_t origmask;
+  // sigset_t origmask;
   fd_set rfds, wfds;
   int nfds = MAX (MAX (cli2srv_usock_fd, conn_cli2srv_usock_fd), srv2cli_usock_fd) + 1;
   FD_ZERO (&rfds); FD_ZERO (&wfds);

@@ -10,19 +10,31 @@
 
 CROSS=arm-none-linux-gnueabi-
 CC := $(CROSS)gcc
-CFLAGS := -v -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN
+#CFLAGS := -v -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN
+CFLAGS := -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN
 STRIP := $(CROSS)strip
+TARGET := can2sep2
+OBJFILES := loc_can.o usock.o ss_proto_can.o ss_proto.o task_queue.o usock_proto.o usock_utils.o utils.o usock_server.o can2sep2.o 
+LDFLAGS := -lm -lrt
 
-all: can2sep2
+all: $(TARGET)
 
-can2sep2: can2sep2.c can.c usock.c
-	${CC} $(CFLAGS) -o $@ can2sep2.c -lrt -lm 
-	$(STRIP) -g $@
+.c.o:
+	${CC} -g -c ${CFLAGS} $<
+
+can2sep2: $(OBJFILES)
+	${CC} $(CFLAGS) -g -o $(TARGET) $(OBJFILES) $(LDFLAGS) 
+#	$(STRIP) -g $@
 
 test_can2sep2_usock: test_can2sep2_usock.c can2sep2_proxy.c
 	${CC} $(CFLAGS) -o $@ test_can2sep2_usock.c -lrt -lm 
 	$(STRIP) -g $@
 	
+test_timerfd_man_eg: test_timerfd_man_eg.c 
+	$(CC) -o $@ test_timerfd_man_eg.c -lrt
+
+test_timerfd_can2sep2: test_timerfd_can2sep2.c 
+	$(CC) -o $@ test_timerfd_can2sep2.c -lrt
 
 clean: 
-	rm -f can2sep2
+	rm -f $(OBJFILES) $(TARGET) test_timerfd_man_eg test_timerfd_can2sep2 *~

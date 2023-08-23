@@ -27,7 +27,7 @@ void send_ss_can_message();
 void set_ack_transmit();
 unsigned char get_current_state();
 void start_ss_can_proto();
-
+void recv_ss_can_message(char* data);
 
 
 #endif // SS_PROTO_CAN_H

@@ -40,8 +40,9 @@ void can_transmit (int id, char *data, int length) {
   memcpy (frame.data, data, length);
   sts = write (can_socket, &frame, sizeof (struct can_frame));
 #ifdef PRINT_CAN_IDS  
-  fprintf(stdout,"Transmitted %d [%d] [%d] [%d] [%d] [%d] \n", id, data[0], 
-    data[1], data[2], data[3], data[4]);
+  fprintf(stdout,"Tx %d [%d] [%d] [%d] [%d] [%d] [%d] [%d] [%d]\n", id, data[0], 
+    data[1], data[2], data[3], data[4], 
+    data[5], data[6], data[7]);
   fprintf(stdout, "Write Sts %d\n", sts);
 #endif
 }
@@ -69,8 +70,8 @@ void send_test_can_messages()
   {
     data[i+1] = rand() % 255;
   }
-  fprintf(stdout,"CAN tx id %4x:  \n", 0x105);
-  can_transmit(0x105, data, 8);
+  fprintf(stdout,"CAN tx id %4x:  \n", 0x3E0);
+  can_transmit(0x3E0, data, 8);
   sleep(1);
   for (i=0; i < 7; i++)
   {

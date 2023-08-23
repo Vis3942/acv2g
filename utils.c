@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <stdarg.h>
 
 #include "utils.h"
 
@@ -57,7 +58,7 @@ int console_log(char *message,...)
 
 void version () {
   fprintf(stdout, "App: %s -- Version: %04x d | compiled: %s\n", app_name, VERSION,  __DATE__);
-  console_log(stdout, "App: %s -- Version: %04x d | compiled: %s\n", app_name, VERSION,  __DATE__);
+  console_log("App: %s -- Version: %04x d | compiled: %s\n", app_name, VERSION,  __DATE__);
 }
 
 uint32_t convertBytesToUint32BigEndian(unsigned char *bytes, int start_idx)
@@ -67,10 +68,25 @@ uint32_t convertBytesToUint32BigEndian(unsigned char *bytes, int start_idx)
   result |= ((uint32_t) bytes[start_idx+1]) << 16;
   result |= ((uint32_t) bytes[start_idx+2]) << 8;
   result |= ((uint32_t) bytes[start_idx+3]);
+  return result;
 }
 
 time_t getCurrentTime()
 {
   time_t secs = time(NULL);
   return secs;
+}
+
+void displayTime() 
+{
+  // time_t rawtime;
+  // struct tm *timeinfo;
+  // char buffer[80];
+
+  // time(&rawtime);
+  // timeinfo = localtime(&rawtime);
+
+  // strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S");
+  // fprintf(stdout, "%s.%03d", buffer, milliseconds)
+  fprintf(stdout, "[%lu] ", (unsigned long)time(NULL));
 }

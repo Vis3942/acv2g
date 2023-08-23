@@ -2,10 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 
 #include "ss_proto_can.h"
 #include "ss_proto.h"
 #include "can.h"
+#include "utils.h"
 
 unsigned char current_state = 0;
 
@@ -96,8 +98,8 @@ void update_can_tx_idx()
  */
 void set_ack_transmit()
 {
-  can_tx_buf[1] = can_tx_buf[1] | (1 << 7); // set ack bit
-  can_transmit (SSP_CAN_TX_ID, can_tx_buf, 8);
+  can_tx_buf[1] = (unsigned char) (can_tx_buf[1] | (1 << 7)); // set ack bit
+  can_transmit (SSP_CAN_TX_ID, (char*)can_tx_buf, 8);
 }
 
 void recv_ss_can_message(char* data)
@@ -108,9 +110,9 @@ void recv_ss_can_message(char* data)
     tmp_ser_num = (int) (data[1] & 0x1F);
     if (tmp_ser_num == curr_ss_tx_serial_number) 
     {
-      if (data[1] & 0x80 == 0x80) // ack bit is set, send next frame or go to RESPONSE_STATE
+      if ( (data[1] & 0x80) == 0x80) // ack bit is set, send next frame or go to RESPONSE_STATE
       {
-        if (data[1] & 0x40 == 0x40) // last frame bit is set
+        if ( (data[1] & 0x40) == 0x40) // last frame bit is set
         {
           current_state = SSP_RESPONSE_STATE;
           curr_ss_rx_serial_number = 0;
@@ -130,8 +132,10 @@ void recv_ss_can_message(char* data)
     tmp_ser_num = (int) (data[1] & 0x1F);
     // expecting serial number is curr_ss_rx_serial_num
     if ( (curr_ss_rx_len + 6) >= MAX_SS_TX_RX_BUF_SIZE ) {
-      printf("INSUFFICIENT MEMORY TO PROCESS Rx message. Aborting processing. \n");
-      printf("curr rx pos %d, max available index %d \n", MAX_SS_TX_RX_BUF_SIZE);
+      //printf("INSUFFICIENT MEMORY TO PROCESS Rx message. Aborting processing. \n");
+      //printf("curr rx pos %d, max available index %d \n", MAX_SS_TX_RX_BUF_SIZE);
+      console_log("INSUFFICIENT MEMORY TO PROCESS Rx message. Aborting processing. \n");
+      console_log("curr rx pos %d, max available index %d \n", MAX_SS_TX_RX_BUF_SIZE);
       return;
     }
     if (curr_ss_rx_serial_number == tmp_ser_num) 
@@ -142,7 +146,7 @@ void recv_ss_can_message(char* data)
       curr_ss_rx_serial_number ++;
       if ( (data[1] & 0x40) == 0x40 ) {
         // last frame process data if it is a read command
-        process_recv_message();
+        process_recv_message_ssproto();
         current_state = SSP_IDLE_STATE;
       }
       set_ack_transmit();
@@ -168,7 +172,7 @@ void send_ss_can_message()
     ii++;
   }
   can_transmit_millis = get_now_time();
-  can_transmit (SSP_CAN_TX_ID, can_tx_buf, 8);
+  can_transmit (SSP_CAN_TX_ID, (char *)can_tx_buf, 8);
   
 }
 
@@ -188,7 +192,7 @@ void start_ss_can_proto()
   }
   else 
   {
-    printf("SunSpec proto is in error state: Cannot start proto \n");
+    console_log("ss can proto is in %d state: Cannot start proto \n", current_state);
   }
 }
 

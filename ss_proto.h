@@ -1,11 +1,14 @@
 #ifndef SS_PROTO_H
 #define SS_PROTO_H
 
+#include <stdint.h>
+#include <stdbool.h>
+
 #define SSP_READ_REGISTER 0x01
 #define SSP_WRITE_REGISTER 0x0F
 
 // all tasks in the sequence to be added to queue
-#define SSP_RECEIVED_DERSETTINGS 0x01
+#define SSP_1_0_RECEIVED_DERSETTINGS 0x01
 #define SSP_2_0_READ_702_SF 0x02 // read all scale factors
 #define SSP_2_1A_READ_702_NAMEPLATE_PART1 0x03 // read regs 2,3,4,5,6 in model 702
 #define SSP_2_1B_READ_702_NAMEPLATE_PART2 0x04 // read regs 20, 21, 22, 23 in model 702
@@ -99,23 +102,32 @@
 #define SSP_4_7_WRITE_FREQUENCY_MMR_SETUP 146
 
 #define SSP_5_1_RECEIVED_DEFAULT_DERCONTROL 150
-#define SSP_6_1_READ_701_REPORT_VALUE 151
-#define SSP_6_2_READ_701_STATUS_VALUE 152
+#define SSP_5_2_WRITE_703_ES 151
+#define SSP_6_1_READ_701_REPORT_VALUE 152
+#define SSP_6_2_READ_701_STATUS_VALUE 153
 // KEEP TRACK OF WHEN THE LAST ActivePower, ReactivePower, Voltage, Freq was sent. 
 // If within postRate (default 15 secs), send it 
 //     else simply set it back to the queue
 
+#define SSP_DER_READ_704_SF 160
+#define SSP_DER_WRITE_704_PARAMS 161
+#define SSP_DER_WRITE_704_ENABLE 162
 
-#define READ_REG_CAN_CODE 0x67
-#define WRITE_REG_CAN_CODE 0x6A
+#define SSP_TEST_READ_CUSTOM_MODEL 200
+extern int test_ss_model_num;
+extern int test_ss_model_start_addr;
+extern int test_ss_model_regs_read_count;
+
+#define READ_REG_SS_CODE 0x67
+#define WRITE_REG_SS_CODE 0x6A
 
 #define READ_NONE 0x00
 #define READ_702_SF 0x01
 
 #define NUM_POINTS_CURVE 10
 
-#define NUM_MODEL_CHARS 16
-#define NUM_VERSION_CHARS 8
+#define NUM_MODEL_CHARS 16*2
+#define NUM_VERSION_CHARS 8*2
 
 // extern vars
 
@@ -243,7 +255,7 @@ extern short reactivepower_sf_701;
 extern short activepower_701_rep;
 extern short reactivepower_701_rep;
 extern short voltage_701_rep;
-extern short frequency_701_rep;
+extern uint32_t frequency_701_rep;
 
 // 701 status
 extern short status_701;
@@ -251,8 +263,19 @@ extern short inv_status_701;
 extern short conn_status_701;
 extern time_t status_time_701;
 
+extern int wset_pct_704;
+extern short wset_pct_ena_704;
+
+// 705 SF
+extern short v_sf_705;
+extern short deptref_sf_705;
+extern short rsptms_sf_705;
+
+
+extern bool comm_status;
 
 void process_recv_message_ssproto();
-
+int get_ss_proto_task_id();
+void ss_proto_task();
 
 #endif // SS_PROTO_H

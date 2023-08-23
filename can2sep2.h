@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 extern int32_t max_Wh;
-extern int32_t max_Wh_recvd = 0; // 0 => not recvd; 1 => recvd max_Wh
+extern int32_t max_Wh_recvd; // 0 => not recvd; 1 => recvd max_Wh
 extern int32_t hcp_sw_ver;
 extern int32_t hcp_sw_ver_recvd;
 extern int32_t battery_status;

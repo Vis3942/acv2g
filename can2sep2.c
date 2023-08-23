@@ -8,16 +8,21 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <sys/socket.h>
+#include <linux/can.h>
+#include <linux/can/raw.h>
 
-#include "can.h"
+
 #include "usock_utils.h"
 #include "usock_server.h"
 #include "utils.h"
 #include "usock_proto.h"
 #include "task_queue.h"
 #include "ss_proto.h"
+#include "ss_proto_can.h"
+#include "loc_can.h"
 
-#define MAX(x,y) ((x) > (y)? (x) : (y))
+//#define MAX(x,y) ((x) > (y)? (x) : (y))
 
 #define DER_INFO_NOT_AVAILABLE 0x07
 #define CHARGE_AT_100PC 0x08  // 0x04 //0x08 // charge rate is -100% => charging
@@ -103,268 +108,30 @@ time_t reading_time;
 int obc_event_status;
 
 int test_can_messages = 0;
+int test_sep2_mirror_usock = 0;
+int test_ss_proto_can = 0;
+int test_ss_proto_id = -1;
+int test_ev_param_post_usock = 0;
+int test_custom_ss_model_read = 0;
+//extern int test_ss_model_num = 0;
+//extern int test_ss_model_start_addr = -1;
+//extern int test_ss_model_regs_read_count = 0;
+int test_der_function = 0;
+int test_der_avail = -1; // default not available
+int test_der_wsetpct = 0;
+
+int test_ss_curve_data = 0;
+int test_ss_curve_type = -1;
+
 int reverse_power_flow_flag;
 int reverse_power_flow_percent;
+int proto_timer_seconds = 5;
 int test_timer_seconds = 5;
 int test_timerfd;
+int proto_timerfd; // for sunspec profile proto impl
 
-void usock_message()
-{
-  // implement the protocol between the kitu sep 2 client and can2sep app
-  // read data sequence begins with 0xFFFF being sent by the client
-  uint16_t data_u16_cmd;
-  uint16_t tmp_u16;
-  int n;
-  int ii;
-  int read_ids_count;
-  n = recv(conn_usock_fd, &data_u16_cmd, sizeof(data_u16_cmd), 0);
-  //printf("unix socket: recv %d bytes\n", n);
-  if ( (n < 0) || (n == 0) )
-  {
-    if (n < 0) perror("recv");
-    close_usock();
-    return;
-  }
-
-  //printf("first data cmd = %x, sts = %d \n", data_u16_cmd, n);
-  if (data_u16_cmd == 0xFFFF)
-  {
-    // start read sequence (from client perspective)
-    // read sequence is from client perspective 
-    // write number of items 
-    // loop number of items
-    //      write item id
-    //      write item value
-
-    // write num items
-    tmp_u16 = (uint16_t)NUMBER_READ_IDS;
-    n = send(conn_usock_fd, &tmp_u16, sizeof(uint16_t), 0);
-    //printf("sending = %d, bytes, value = %d \n", n, tmp_u16);
-    if (n < 0)
-    {
-      perror("send");
-      close_usock();
-      return;
-    }
-    for (ii=1; ii <= NUMBER_READ_IDS; ii++)
-    {
-      // send id
-      tmp_u16 = (uint16_t) ii;
-      n = send(conn_usock_fd, &tmp_u16, sizeof(uint16_t), 0);
-      if (n < 0)
-      {
-        perror("send");
-        close_usock();
-        return;
-      }
-      //fprintf(stdout, "write bytes %d \n", n);
-      //printf("succ sent id %d \n", ii);
-      // send val corresponding to id
-      switch (ii)
-      {
-        case (int)MAX_CHARGE_RATE_READ_ID:
-          n = send(conn_usock_fd, &max_charge_rate, sizeof(int32_t), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-        case (int)MAX_DISCHARGE_RATE_READ_ID:
-          n = send(conn_usock_fd, &max_discharge_rate , sizeof(int32_t), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-
-        case (int)CURRENT_SOC_READ_ID:
-          n = send(conn_usock_fd, &current_soc , sizeof(float), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-
-        case (int)TARGET_SOC_READ_ID:
-          n = send(conn_usock_fd, &target_soc , sizeof(float), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-
-        case (int) TIME_CHARGE_NEEDED_READ_ID:
-          n = send(conn_usock_fd, &time_charge_is_neeeded_duration_secs , sizeof(int32_t), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-
-        case (int) MAX_CHARGE_DURATION_READ_ID:
-          n = send(conn_usock_fd, &max_charge_duration_secs , sizeof(int32_t), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-
-        case (int) AVAILABILITY_SECS_READ_ID:
-          n = send(conn_usock_fd, &availability_duration_secs , sizeof(int32_t), 0);
-          if (n < 0)
-          {
-            perror("send");
-            close_usock();
-            return;
-          }
-          //fprintf(stdout, "write bytes %d \n", n);
-          break;
-      }
-      //printf("end of switch for sending value %d \n", ii);
-    }
-  }
-
-  // write data sequence begins with 0x7FFF being 
-  n = recv(conn_usock_fd, &data_u16_cmd, sizeof(data_u16_cmd), 0);
-  //printf("unix socket: recv %d bytes\n", n);
-  //printf("second data cmd = %x, sts = %x \n", data_u16_cmd, n);
-  if ( (n < 0) || (n == 0) )
-  {
-    if (n < 0) perror("recv");
-    close_usock();
-    return;
-  }
-
-  if (data_u16_cmd == 0x7FFF)
-  {
-    // start write sequence (from client perspective)
-    // write sequence is from client perspective
-    // read number of items 
-    // loop number of items
-    //      read item id
-    //      read item value
-
-    // read number of items
-    n = recv(conn_usock_fd, &tmp_u16, sizeof(tmp_u16), 0);
-    if ( (n < 0) || (n == 0) )
-    {
-      if (n < 0) perror("recv");
-      close_usock();
-      return;
-    }
-    //printf("number of rd ids recv = %d, bytes, value = %d \n", n, tmp_u16);
-    read_ids_count = (int) tmp_u16;
-    for (ii=1; ii <= read_ids_count; ii++)
-    {
-      // read id of data
-      n = recv(conn_usock_fd, &tmp_u16, sizeof(tmp_u16), 0);
-      if ( (n < 0) || (n == 0) )
-      {
-        if (n < 0) perror("recv");
-        close_usock();
-        return;
-      }
-      //printf("id: read %d bytes, value %x \n", n, tmp_u16);
-      // read data corresponding to id of data
-      switch (tmp_u16)
-      {
-        case (uint16_t)SERVER_STATUS_WRITE_ID:
-          n = recv(conn_usock_fd, &server_status, sizeof(int32_t), 0);
-          //printf("server status write id called, val = %d, sts = %x\n", server_status, n);
-          if ( (n < 0) || (n == 0) )
-          {
-            if (n < 0) perror("recv");
-            close_usock();
-            return;
-          }
-          break;
-
-        case (uint16_t)CHARGE_PERCENT_WRITE_ID:
-          n = recv(conn_usock_fd, &charge_percent, sizeof(int32_t), 0);
-          //printf("charge pc write id called, val = %d, sts = %x \n", charge_percent, n);
-          if ( (n < 0) || (n == 0) )
-          {
-            if (n < 0) perror("recv");
-            close_usock();
-            return;
-          }
-          break;
-
-        case (uint16_t)DURATION_SECS_WRITE_ID:
-          n = recv(conn_usock_fd, &duration_secs, sizeof(int32_t), 0);
-          //printf("duration secs write id called, val = %d, sts = %x \n", duration_secs, n);
-          if ( (n < 0) || (n == 0) )
-          {
-            if (n < 0) perror("recv");
-            close_usock();
-            return;
-          }
-          break;
-
-        case (uint16_t)TIME_2_EVENT_SECS_WRITE_ID:
-          n = recv(conn_usock_fd, &time_to_event_start_secs, sizeof(int32_t), 0);
-          //printf("time 2 event secs write id called, val = %d, sts = %x \n", time_to_event_start_secs, n);
-          if ( (n < 0) || (n == 0) )
-          {
-            if (n < 0) perror("recv");
-            close_usock();
-            return;
-          }
-          break;
-
-      }
-    }
-  }
-
-  if (
-    (prev_server_status != server_status) || (prev_charge_percent != charge_percent) ||
-    (prev_duration_secs != duration_secs) || 
-    (prev_time_to_event_start_secs != time_to_event_start_secs)
-  ) 
-  {
-    if (prev_server_status != server_status)
-    {
-      prev_server_status = server_status;
-    }
-    if (prev_charge_percent != charge_percent)
-    {
-      prev_charge_percent = charge_percent;
-    }
-    if (prev_duration_secs != duration_secs)
-    {
-      prev_duration_secs = duration_secs;
-    }
-    if (prev_time_to_event_start_secs != time_to_event_start_secs)
-    {
-      prev_time_to_event_start_secs = time_to_event_start_secs;
-    }
-
-    fprintf(stdout, "server status = %d, charge_percent = %d, \n duration_secs=%d, time_to_event_start_secs = %d \n", 
-      server_status, charge_percent, duration_secs, time_to_event_start_secs);
-
-    console_log("server status = %d, charge_percent = %d, \n duration_secs=%d, time_to_event_start_secs = %d \n", 
-      server_status, charge_percent, duration_secs, time_to_event_start_secs);
-  }
-}
-
+int usock_init_done = 0; // 1 if done
+int timers_init_done = 0; // 1 if done
 
 void disp_can_message(int id, char*data_recv){
       fprintf(stdout,"can id %4x:  \n", id);
@@ -381,16 +148,22 @@ void disp_can_message(int id, char*data_recv){
 
 void can_message (int id, char *data_recv) {
   //int i, soc, capacity; uint32_t charge_rate; uint64_t average = 0;
-  double tmpdbl;
+  //double tmpdbl;
   int tmpi;
   int16_t tmp16_t;
   int send_to_hcp = 0;
   char data[8];
+  // debug
+  //fprintf(stdout, "id recv %d\n", id);
   switch (id) 
   {
   case 0x30A: // HCP_DER_MSG_01
 #ifdef PRINT_CAN_IDS
-    fprintf(stdout,"can id 0x30A: HCP_DER_MSG_01 \n");
+  fprintf(stdout,"can id 0x30A: HCP_DER_MSG_01 \n");
+  fprintf(stdout,"Tx %d [%d] [%d] [%d] [%d] [%d] [%d] [%d] [%d]\n", id, data_recv[0], 
+    data_recv[1], data_recv[2], data_recv[3], data_recv[4], 
+    data_recv[5], data_recv[6], data_recv[7]);
+
 #endif
     der_mode = ( (data_recv[4] & 0xC0) >> 2 );
     hcp_sw_ver = (data_recv[4] & 0x3F);
@@ -427,7 +200,7 @@ void can_message (int id, char *data_recv) {
     current_power_source = ( data_recv[5] & 0xE0 ) >> 5;
     battery_status = (data_recv[5] & 0x1C) >> 2;
     tmpi =  (data_recv[5] &0x03) << 9;
-    tmpi = tmpi + data_recv[6] << 1;
+    tmpi = tmpi + ( data_recv[6] << 1 );
     if ( (data_recv[7] & 0x80) == 0x80)
     {
       tmpi = tmpi + 1;
@@ -480,11 +253,21 @@ void can_message (int id, char *data_recv) {
     send_to_hcp = 0;
     break;
   
+  case SSP_CAN_RX_ID:
+    recv_ss_can_message(data_recv);
+    send_to_hcp = 0;
+    break;
+
   default:
     // do nothing 
     send_to_hcp = 0;
     break;
   }
+#ifdef PRINT_CAN_IDS
+  fprintf(stdout,"Rx %d [%d] [%d] [%d] [%d] [%d] [%d] [%d] [%d]\n", id, data_recv[0], 
+    data_recv[1], data_recv[2], data_recv[3], data_recv[4], 
+    data_recv[5], data_recv[6], data_recv[7]);
+#endif
 
   if (send_to_hcp == 1) 
   {
@@ -500,6 +283,16 @@ void can_message (int id, char *data_recv) {
     {
       data[0] = (data[0] | 0x80);
     }
+
+    if (comm_status)
+    {
+      data[0] = data[0] | 0x20; // no LOC
+    }
+    else 
+    {
+      data[0] = data[0] | 0x40; // LOC
+    }
+
     data[1] = 0;
     data[2] = 0;
     data[3] = 0;
@@ -507,7 +300,17 @@ void can_message (int id, char *data_recv) {
     data[5] = 0;
     data[6] = 0;
     data[7] = 0;
-    can_transmit(0x30F, data, 8);
+    can_transmit((int)0x30F, data, 8);
+    usleep(5000);
+    data[0] = 0;
+    data[1] = 0;
+    data[2] = 0;
+    data[3] = 0;
+    data[4] = 0;
+    data[5] = 0;
+    data[6] = (uint8_t)get_ss_proto_task_id(); // ss proto task id
+    data[7] = (uint8_t)get_current_state(); // ss proto can state
+    can_transmit((int)0x329, data, 8);
   }
 }
 
@@ -517,38 +320,65 @@ void message_received (int x) {
   struct timeval timeout = {0};
   fd_set rfds, wfds;
   int nfds;
+  ssize_t s;
+  uint64_t exp_count;
 
   int tmpmax;
-  tmpmax = MAX(can_socket, srv2cli_usock_fd);
-  tmpmax = MAX(tmpmax, conn_srv2cli_usock_fd);
-  tmpmax = MAX(tmpmax, cli2srv_usock_fd);
-  tmpmax = MAX(tmpmax, conn_cli2srv_usock_fd);
-  if (test_can_messages) 
+  if (usock_init_done == 1)
   {
-    tmpmax = MAX(tmpmax, test_timerfd);
+    tmpmax = MAX(can_socket, srv2cli_usock_fd);
+    tmpmax = MAX(tmpmax, conn_srv2cli_usock_fd);
+    tmpmax = MAX(tmpmax, cli2srv_usock_fd);
+    tmpmax = MAX(tmpmax, conn_cli2srv_usock_fd);
   }
-  nfds = tmpmax;
+  else 
+  {
+    tmpmax = can_socket;
+  }
+
+  if (timers_init_done)
+  {
+    tmpmax = MAX(tmpmax, proto_timerfd);
+    if ( (test_can_messages) || (test_sep2_mirror_usock) || (test_ev_param_post_usock)) 
+    {
+      tmpmax = MAX(tmpmax, test_timerfd);
+    }
+  }
+  nfds = tmpmax+1;
 
   FD_ZERO (&rfds); FD_ZERO (&wfds);
   FD_SET (can_socket, &rfds);
-  FD_SET (cli2srv_usock_fd, &rfds);
-  if (conn_cli2srv_usock_fd > 0)
+  if (usock_init_done == 1)
   {
-    FD_SET (conn_cli2srv_usock_fd, &rfds);
+    FD_SET (cli2srv_usock_fd, &rfds);
+    if (conn_cli2srv_usock_fd > 0)
+    {
+      FD_SET (conn_cli2srv_usock_fd, &rfds);
+    }
+    FD_SET(srv2cli_usock_fd, &rfds);
+    if (conn_srv2cli_usock_fd > 0)
+    {
+      FD_SET (conn_srv2cli_usock_fd, &rfds);
+    }
   }
-  FD_SET(srv2cli_usock_fd, &rfds);
-  if (conn_srv2cli_usock_fd > 0)
+  if (timers_init_done)
   {
-    FD_SET (conn_srv2cli_usock_fd, &rfds);
+    FD_SET(proto_timerfd, &rfds);
+    if ( (test_can_messages) || (test_sep2_mirror_usock) || (test_ev_param_post_usock) )
+    {
+      FD_SET(test_timerfd, &rfds);
+    }
   }
-  if (test_can_messages)
-  {
-    FD_SET(test_timerfd, &rfds);
-  }
-  //printf("in message received \n");
+  // debug
+  //fprintf(stdout, "in message received \n");
   if (select (nfds, &rfds, NULL, NULL, &timeout) > 0) {
+  // if (select (nfds, &rfds, NULL, NULL, NULL) > 0) {
+
+    //debug
     //fprintf(stdout," in select call with io recv \n");
     if (FD_ISSET (can_socket, &rfds)) {
+      // debug 
+      //fprintf(stdout, "can socket read next \n");
       while (read(can_socket, &frame, sizeof(struct can_frame)) >= 0) {
         if (frame.can_id & CAN_ERR_FLAG) {
             fprintf(stdout,"can error frame\n"); continue;
@@ -564,38 +394,105 @@ void message_received (int x) {
       }
     }
 
-    if (FD_ISSET (cli2srv_usock_fd, &rfds)) 
+    if (usock_init_done == 1)
     {
-      usock_client2server_accept();
+      if (FD_ISSET (cli2srv_usock_fd, &rfds)) 
+      {
+        fprintf(stdout, "usock client2server accepts \n");
+        usock_client2server_accept();
+      }
+
+      if (FD_ISSET (srv2cli_usock_fd, &rfds))
+      {
+        fprintf(stdout, "usock server2cleint accepts \n");
+        usock_server2client_accept();
+      }
+
+      if (conn_cli2srv_usock_fd > 0)
+      {
+        fprintf(stdout, "read message client2server \n");
+        if (FD_ISSET (conn_cli2srv_usock_fd, &rfds)) usock_client2server_read_message();
+      }
     }
 
-    if (FD_ISSET (srv2cli_usock_fd, &rfds))
+    if (timers_init_done)
     {
-      usock_server2client_accept()
-    }
+      // conn_srv2cli_usock_fd is only for writing messages
+      if (FD_ISSET (proto_timerfd, &rfds))
+      {
+        fprintf(stdout, "proto timer triggered \n");
+        s = read(proto_timerfd, &exp_count, sizeof(uint64_t));
+        if (s != sizeof(uint64_t))
+        {
+          perror("read timerfd:");
+          return;
+        }
+        else 
+        {
+          //debug
+          ss_proto_task();
+        }
+      }
 
-    if (conn_cli2srv_usock_fd > 0)
-    {
-      if (FD_ISSET (conn_cli2srv_usock_fd, &rfds)) usock_client2server_read_message();
-    }
+      if ( (test_can_messages) || (test_sep2_mirror_usock) || (test_ev_param_post_usock) )
+      {
+        if (FD_ISSET (test_timerfd, &rfds)) 
+        {
+          // debug 
+          fprintf(stdout, "timer id triggered \n");
 
-    // conn_srv2cli_usock_fd is only for writing messages
-
-    if (test_can_messages)
-    {
-      if (FD_ISSET (test_timerfd, &rfds)) send_test_can_messages();
+          s = read(test_timerfd, &exp_count, sizeof(uint64_t));
+          if (s != sizeof(uint64_t))
+          {
+            perror("read timerfd:");
+            return;
+          }
+          else 
+          {
+            //debug
+            fprintf(stdout, "test timerfd fired \n");
+          }
+          if (test_can_messages)
+          {
+            send_test_can_messages();
+          }
+          else if (test_sep2_mirror_usock)
+          {
+            test_mirror_usock();
+          }
+          else if (test_ev_param_post_usock)
+          {
+            test_ev_params_post_usock();
+          }
+        }
+      }
     }
 
   }
 }
 
-
+void print_options()
+{
+  printf("can2sep [options]\n");
+  printf("\t -t <time interrval>; send test can messages periodically at time interval\n");
+  printf("\t -m <time interval>; test setup and sending of 2030.5 mirror setup and periodic send messages\n");
+  printf("\t -c <app id for read regs>; test sunspec can proto, perform read based on app identifier\n");
+  printf("\t -e <time interval>; send ev parameters after specified time interval\n");
+  printf("\t -s <sunspec model>; specify sunspec model to read from as integer \n");
+  printf("\t -a <model start addr>; specify start address to read from model as int \n");
+  printf("\t -b <number of regs to read>; specify number of regs to read as int \n");
+  printf("\t -d <0 no der, 1 der present, specify -p for wsetpct>\n");
+  printf("\t -p <wset pct can be +ve or -ve >\n");
+  printf("\t -q <send curves to OBCM 0 => for default volt-var curve; others values reserved>\n");
+  printf("\t -h: print this help info\n");
+  exit(EXIT_SUCCESS);
+}
 
 void signal_init () {
   struct sigaction action;
-  struct sigevent event;
-  struct itimerspec expire;
-  signal (SIGPIPE, SIG_IGN); 
+  // struct sigevent event;
+  // struct itimerspec expire;
+  //signal (SIGPIPE, SIG_IGN); 
   action.sa_handler = message_received;
   action.sa_flags = 0;
   if (sigaction (SIGIO, &action, NULL) < 0)
@@ -603,9 +500,29 @@ void signal_init () {
   // enable SIGIO signaling for new messages
   }
 
+// update this array if the defines SSP_X_X_.... changes
+int read_ss_ids[] = {
+  2,3,4,5,6,8,51, 56,60,64, 
+  70, 74, 80, 84, 90, 94, 100, 104,
+  110, 114, 120, 124, 141, 142, 152, 153, 160
+};
+int read_ss_ids_length = 27;
+int is_identifier_read_only(int app_ss_identifier)
+{
+  int ii;
+  for (ii=0; ii<read_ss_ids_length; ii++)
+  {
+    if (read_ss_ids[ii] == app_ss_identifier)
+    {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 void parse_options (int argc, char **argv) {
   int arg;
-  while ((arg = getopt (argc, argv, "rt:")) != -1)
+  while ((arg = getopt (argc, argv, "r:t:m:hce:s:a:b:d:p:q:")) != -1)
   {
     switch (arg){
       case 'r':
@@ -617,6 +534,58 @@ void parse_options (int argc, char **argv) {
       case 't':
           test_can_messages = 1;
           test_timer_seconds = atoi(optarg);
+        break;
+      case 'h':
+        print_options();
+        break;
+      case 'm':
+        test_sep2_mirror_usock = 1;
+        test_timer_seconds = atoi(optarg);
+        break;
+      case 'c':
+        test_ss_proto_can = 1;
+        test_ss_proto_id = atoi(optarg);
+        if (!is_identifier_read_only(test_ss_proto_id))
+        {
+          fprintf(stdout, "provided app identifier is not a read defaulting to READ_703_ALL\n");
+          test_ss_proto_id = SSP_2_3_READ_703_ALL;
+        }
+        enqueue(test_ss_proto_id);
+        break;
+      case 'e':
+        test_ev_param_post_usock = 1;
+        test_timer_seconds = atoi(optarg);
+        break;
+      case 's':
+        test_custom_ss_model_read = 1;
+        test_ss_model_num = atoi(optarg);
+        break;
+      case 'a':
+        test_custom_ss_model_read = 1;
+        test_ss_model_start_addr = atoi(optarg);
+        break;
+      case 'b':
+        test_custom_ss_model_read = 1;
+        test_ss_model_regs_read_count = atoi(optarg);
+        break;
+      case 'd':
+        test_der_function = 1;
+        test_der_avail = atoi(optarg);
+        if (test_der_avail > 1)
+        {
+          test_der_avail = 1;
+        }
+        else if (test_der_avail < 0)
+        {
+          test_der_avail = 0;
+        }
+        break;
+      case 'p':
+        test_der_wsetpct = atoi(optarg);
+        break;
+      case 'q':
+        test_ss_curve_data = 1;
+        test_ss_curve_type = atoi(optarg);
         break;
       case '?':
         // Encountered an unknown or improperly formatted flag,
@@ -642,7 +611,95 @@ void parse_options (int argc, char **argv) {
         break;
       default:
         //Hit some unexpected case - quit.
+        print_options();
         exit(EXIT_FAILURE);
+    }
+  }
+  if (test_custom_ss_model_read == 1)
+  {
+    if ( (test_ss_model_num > 0) && 
+          (test_ss_model_start_addr > -1) && 
+          (test_ss_model_regs_read_count > 0) 
+        )
+    {
+      enqueue(SSP_TEST_READ_CUSTOM_MODEL);
+
+    }
+    else 
+    {
+      fprintf(stdout, "Invalid options for custom ss model read; require options s, a, b \n");
+      fprintf(stdout, "model num = %d, start addr = %d, num regs to read = %d \n",
+        test_ss_model_num, test_ss_model_start_addr, test_ss_model_regs_read_count);
+      print_options(EXIT_FAILURE);
+    }
+  }
+  else if (test_der_function == 1)
+  {
+    if ( (test_der_avail == 1) && (test_der_wsetpct != 0) )
+    {
+      // setup parameters for the test
+      server_status = test_der_avail;
+      comm_status = 1;
+      evcc_es = 1;        
+      ES = 1;
+      wset_pct_704 = test_der_wsetpct;
+      wset_pct_ena_704 = 1;
+
+      enqueue(SSP_5_2_WRITE_703_ES);
+      enqueue(SSP_DER_WRITE_704_PARAMS); 
+      enqueue(SSP_DER_WRITE_704_ENABLE);   
+    }
+    else if (test_der_avail == 0)
+    {
+        evcc_es = 0;
+        ES = 0;
+        wset_pct_704 = 0;
+        comm_status = 0;
+        wset_pct_ena_704 = 0;
+        
+      enqueue(SSP_5_2_WRITE_703_ES);
+      enqueue(SSP_DER_WRITE_704_PARAMS);    
+      enqueue(SSP_DER_WRITE_704_ENABLE);   
+    }
+    else 
+    {
+      //discard options and exit
+      fprintf(stdout, "invalid options for DER setup\n");
+      fprintf(stdout, "require der avail value (given: %d), and wsetpct (given %d) \n",
+        test_der_avail, test_der_wsetpct);
+      exit(EXIT_FAILURE);
+    }
+  }
+  else if (test_ss_curve_data == 1)
+  {
+    if (test_ss_curve_type != 0)
+    {
+      fprintf("supported curve types are [0] => voltvar curve, type specified %d. Exit App\n", test_ss_curve_type);
+      exit(EXIT_FAILURE);
+    }
+    else 
+    {
+      volt_var_points_count = 4;
+      volt_var_curve_received = 1;
+      setVRef = (short)208;
+      v_sf_705 = (short) setVRef;
+      vamax_702 = (short)660;
+      volt_var_x[0] = 0.920*setVRef;
+      volt_var_y[0] = 0.30*vamax_702;
+      volt_var_x[1] = 0.967*setVRef;
+      volt_var_y[1] = 0;
+      volt_var_x[2] = 1.033*setVRef;
+      volt_var_y[2] = 0;
+      volt_var_x[3] = -0.30*vamax_702;
+      volt_var_y[3] = 0.30*vamax_702;
+      enqueue(SSP_2_2_READ_702_CONFIG_INFO);
+      enqueue(SSP_3_READ_705_SF);
+      enqueue(SSP_3_WRITE_705_PARAMS_1);
+      enqueue(SSP_3_WRITE_705_PARAMS_2);
+      enqueue(SSP_3_WRITE_705_CURVE_DATA);
+      enqueue(SSP_3_WRITE_705_CURVE_VERIFY_REQ);
+      enqueue(SSP_3_READ_705_CURVE_VERIFY_RESP);
+      enqueue(SSP_3_WRITE_705_CURVE_ENABLE);
     }
   }
 }
@@ -684,39 +741,96 @@ void init_data()
   test_can_messages = 0;
   reverse_power_flow_flag = 0;
   reverse_power_flow_percent = 0;
+  test_sep2_mirror_usock = 0;
   srand(time(NULL));
   // console_logf_init = 0;
   // number_log_messages = 0;
 
   init_queue();
-  enqueue(SSP_2_0_READ_702_SF);
-  enqueue(SSP_2_1A_READ_702_NAMEPLATE_PART1);
-  enqueue(SSP_2_1B_READ_702_NAMEPLATE_PART2);
-  enqueue(SSP_2_2_READ_702_CONFIG_INFO);
-  enqueue(SSP_2_3_READ_703_ALL);
-  enqueue(SSP_2_4_RECEIVED_WHMAX);
-  enqueue(SSP_2_5_READ_001_PARAMS);
-  enqueue(SSP_2_6_RECEIVED_HCP_SW_VERSION);
-  enqueue(SSP_3_RECEIVED_DEFAULT_DERCONTROL);
-  enqueue(SSP_4_1_WRITE_MUP_SETUP);
-  enqueue(SSP_4_2_READ_701_SF);
-  enqueue(SSP_4_3_READ_701_ACTYPE);
-  enqueue(SSP_4_4_WRITE_ACTIVE_POWER_MMR_SETUP);
-  enqueue(SSP_4_5_WRITE_REACTIVE_POWER_MMR_SETUP);
-  enqueue(SSP_4_6_WRITE_VOLTAGE_MMR_SETUP);
-  enqueue(SSP_4_7_WRITE_FREQUENCY_MMR_SETUP);
-  enqueue(SSP_5_1_RECEIVED_DEFAULT_DERCONTROL);
-  enqueue(SSP_6_1_READ_701_REPORT_VALUE);
   init_queue_2();
 
 }
 
-void setup_timerfd_for_cantest() 
+void init_ssproto()
+{
+  if ( (!test_ss_proto_can) && (!test_custom_ss_model_read) && 
+       (!test_der_avail) && (!test_ss_curve_data) 
+     ) 
+  {
+    enqueue(SSP_1_0_RECEIVED_DERSETTINGS);
+    enqueue(SSP_2_0_READ_702_SF);
+    enqueue(SSP_2_1A_READ_702_NAMEPLATE_PART1);
+    enqueue(SSP_2_1B_READ_702_NAMEPLATE_PART2);
+    enqueue(SSP_2_2_READ_702_CONFIG_INFO);
+    enqueue(SSP_2_3_READ_703_ALL);
+    enqueue(SSP_2_4_RECEIVED_WHMAX);
+    enqueue(SSP_2_5_READ_001_PARAMS);
+    enqueue(SSP_2_6_RECEIVED_HCP_SW_VERSION);
+    enqueue(SSP_3_RECEIVED_DEFAULT_DERCONTROL);
+    enqueue(SSP_4_1_WRITE_MUP_SETUP);
+    enqueue(SSP_4_2_READ_701_SF);
+    enqueue(SSP_4_3_READ_701_ACTYPE);
+    enqueue(SSP_4_4_WRITE_ACTIVE_POWER_MMR_SETUP);
+    enqueue(SSP_4_5_WRITE_REACTIVE_POWER_MMR_SETUP);
+    enqueue(SSP_4_6_WRITE_VOLTAGE_MMR_SETUP);
+    enqueue(SSP_4_7_WRITE_FREQUENCY_MMR_SETUP);
+    enqueue(SSP_5_1_RECEIVED_DEFAULT_DERCONTROL);
+    enqueue(SSP_6_1_READ_701_REPORT_VALUE);
+    enqueue(SSP_DER_READ_704_SF);
+  }
+
+}
+
+void setup_proto_timerfd()
 {
   struct itimerspec new_value;
-  new_value.it_value.tv_sec = test_timer_seconds;
-  new_value.it_value.tv_nsec = 0;
-  test_timerfd = timerfd_create(CLOCK_MONOTONIC, 0);
+  struct timespec now;
+
+  if (clock_gettime(CLOCK_REALTIME, &now) == -1)
+      perror("clock_gettime");
+
+  new_value.it_value.tv_sec = now.tv_sec + proto_timer_seconds;
+  new_value.it_value.tv_nsec = now.tv_nsec;
+  new_value.it_interval.tv_sec = proto_timer_seconds;
+  new_value.it_interval.tv_nsec = 0;
+  proto_timerfd = timerfd_create(CLOCK_REALTIME, 0);
+  //proto_timerfd = timerfd_create(CLOCK_MONOTONIC, 0);
+  if (proto_timerfd == -1)
+  {
+    perror("timerfd_create");
+    exit(EXIT_FAILURE);
+  }
+
+  // set it to non-blocking
+  if (fcntl(proto_timerfd, F_SETFL, O_NONBLOCK))
+  {
+    perror("non-blocking-setup-error");
+    exit(EXIT_FAILURE);
+  }
+
+  if (timerfd_settime(proto_timerfd, TFD_TIMER_ABSTIME, &new_value, NULL) == -1)
+  {
+    perror("timerfd_settime");
+    exit(EXIT_FAILURE);
+  }
+  fprintf(stdout, "timerfd setup for SSProto \n");
+
+}
+
+
+void setup_timerfd_for_test() 
+{
+  struct itimerspec new_value;
+  struct timespec now;
+
+  if (clock_gettime(CLOCK_REALTIME, &now) == -1)
+      perror("clock_gettime");
+
+  new_value.it_value.tv_sec = now.tv_sec + test_timer_seconds;
+  new_value.it_value.tv_nsec = now.tv_nsec;
+  new_value.it_interval.tv_sec = test_timer_seconds;
+  new_value.it_interval.tv_nsec = 0;
+  test_timerfd = timerfd_create(CLOCK_REALTIME, 0);
   if (test_timerfd == -1)
   {
     perror("timerfd_create");
@@ -735,7 +849,8 @@ void setup_timerfd_for_cantest()
     perror("timerfd_settime");
     exit(EXIT_FAILURE);
   }
-  
+  fprintf(stdout, "timerfd setup for test \n");
+
 }
 
 int main (int argc, char **argv) {
@@ -745,14 +860,29 @@ int main (int argc, char **argv) {
   parse_options(argc, argv);
   signal_init ();
   can_open ();
-  if (test_can_messages)
+  init_ssproto();
+  if ( (test_can_messages) || (test_sep2_mirror_usock) || (test_ev_param_post_usock))
   {
     //send_test_can();
-    setup_timerfd_for_cantest();
+    setup_timerfd_for_test();
   }
+  setup_proto_timerfd();
+  timers_init_done=1;
   //send_VIN();
   usock_init();
+  usock_init_done = 1;  
   register_process_messages_callback(process_recv_message);
+
+  //signal_init();
   while (1) pause ();
+  
+  // fprintf(stdout, "before message_received loop \n");
+  // while (1) 
+  // {
+  //   // fprintf(stdout, "before calling message_received \n");
+  //   message_received(27); // 27 just a random value, to be compatible with earlier signature, not used
+  //   // sleep(5);
+  // }
+
   return 0;
 }
