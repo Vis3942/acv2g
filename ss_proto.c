@@ -205,7 +205,11 @@ short inv_status_701 = 0;
 short conn_status_701 = 0;
 time_t status_time_701;
 
+bool sts_init = false;
 bool comm_status = false;
+bool before_override_comm_status = false;
+int server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
+int before_override_server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
 
 int test_ss_model_num = 0;
 int test_ss_model_start_addr = -1;
@@ -701,7 +705,8 @@ void write_wset_pct_704_der()
     ss_tx_buf[5] = 0x00;
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
-    tmpi = (int)( wset_pct_704/pow(10, wsetpct_sf_704) ); // Wsetpct
+    //tmpi = (int)( wset_pct_704/pow(10, wsetpct_sf_704) ); // Wsetpct
+    tmpi = (int)( wset_pct_704 ); // Wsetpct
     ss_tx_buf[8] = ( char) (tmpi >> 8);
     ss_tx_buf[9] = (char) (tmpi);
 
@@ -792,7 +797,7 @@ void write_params1_curve_705_step3()
     ss_tx_buf[11] = 0x03; 
     ss_tx_buf[12] = 0x00; // pri
     ss_tx_buf[13] = 0x01;
-    tmpi = (int)( 100/pow(10, v_sf_705) ); // VRef
+    tmpi = (int)( 1/pow(10, v_sf_705) ); // VRef
     ss_tx_buf[14] = ( char) (tmpi >> 8);
     ss_tx_buf[15] = (char) (tmpi);
     curr_ss_tx_len = 16;
@@ -814,10 +819,10 @@ void write_params2_curve_705_step3()
     ss_tx_buf[9] = 0x00;
     ss_tx_buf[10] = 0x00; // VRefAutoTms
     ss_tx_buf[11] = 0x00; 
-    ss_tx_buf[12] = 0x00; // RspTms " default: 50"
+    ss_tx_buf[12] = 0x00; // RspTms " default: 5 secs with scale of -1 it should be 50"
     ss_tx_buf[13] = 0x00;
-    ss_tx_buf[14] = 0x01;
-    ss_tx_buf[15] = 0xF4;
+    ss_tx_buf[14] = 0x00;
+    ss_tx_buf[15] = 0x32;
     curr_ss_tx_len = 16;
     read_cmd = READ_NONE;
 }
@@ -866,7 +871,7 @@ void write_verify_req_volt_var_curve_705_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 705
+    ss_tx_buf[9] = 2; // third curve verify in model 705
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -992,10 +997,10 @@ void write_params_curve_706_step3()
     ss_tx_buf[9] = (char)volt_watt_points_count;
     ss_tx_buf[10] = 0x00; // DeptRef
     ss_tx_buf[11] = 0x00; 
-    ss_tx_buf[12] = 0x00; // RspTms " default: 100" / factor (-1)
+    ss_tx_buf[12] = 0x00; // RspTms " default: 100" INCLUSIVE OF factor (-1)
     ss_tx_buf[13] = 0x00;
-    ss_tx_buf[14] = 0x03;
-    ss_tx_buf[15] = 0xE8;
+    ss_tx_buf[14] = 0x00;
+    ss_tx_buf[15] = 0x64;
     curr_ss_tx_len = 16;
     read_cmd = READ_NONE;
 }
@@ -1043,7 +1048,7 @@ void write_verify_req_volt_watt_curve_706_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 706
+    ss_tx_buf[9] = 2; // third curve verify in model 706
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -1209,7 +1214,7 @@ void write_verify_req_low_volt_trip_curve_707_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 707
+    ss_tx_buf[9] = 2; // third curve verify in model 707
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -1375,7 +1380,7 @@ void write_verify_req_high_volt_trip_curve_708_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 708
+    ss_tx_buf[9] = 2; // third curve verify in model 708
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -1545,7 +1550,7 @@ void write_verify_req_low_freq_trip_curve_709_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 709
+    ss_tx_buf[9] = 2; // third curve verify in model 709
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -1713,7 +1718,7 @@ void write_verify_req_high_freq_trip_curve_710_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 710
+    ss_tx_buf[9] = 2; // third curve verify in model 710
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -1878,7 +1883,7 @@ void write_verify_req_freq_droop_curve_711_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 711
+    ss_tx_buf[9] = 2; // third curve verify in model 711
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -2046,7 +2051,7 @@ void write_verify_req_watt_var_curve_712_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    ss_tx_buf[9] = 3; // third curve verify in model 712
+    ss_tx_buf[9] = 2; // third curve verify in model 712
 
     curr_ss_tx_len = 10;
     read_cmd = READ_NONE;
@@ -2864,6 +2869,8 @@ int ss_completed_task(int task_id)
             if (default_derc_received == 1) {
                 ret_val = 1;
                 enqueue(SSP_5_1_RECEIVED_DEFAULT_DERCONTROL);
+                topqueue(SSP_5_2_WRITE_703_ES);
+                default_derc_received = 0;
             }
             break; 
         case SSP_5_2_WRITE_703_ES:
@@ -2871,7 +2878,7 @@ int ss_completed_task(int task_id)
             if (ss_can_proto_state == SSP_IDLE_STATE)
             {
                 ret_val = 1;
-                enqueue(SSP_5_2_WRITE_703_ES);
+                //enqueue(SSP_5_2_WRITE_703_ES);
             }
             break;
         case SSP_6_1_READ_701_REPORT_VALUE:
@@ -2894,6 +2901,7 @@ int ss_completed_task(int task_id)
                 send_der_availabilit_req();
                 send_der_status_req();
                 enqueue(SSP_6_2_READ_701_STATUS_VALUE);   
+                ret_val = 1;
             }
             break;
         case SSP_3_READ_705_SF:

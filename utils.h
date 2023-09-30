@@ -18,6 +18,7 @@ void version();
 uint32_t convertBytesToUint32BigEndian(unsigned char *bytes, int start_idx);
 time_t getCurrentTime();
 void displayTime();
+int bytesToInt(char* bytes, int start_idx);
 
 #endif // UTILS_H
 

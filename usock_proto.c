@@ -54,6 +54,7 @@ static sl_cmn_rt_t defaultRtype = {
 
 
 char recv_buf[2048];
+int recv_buf_len = 0;
 char send_buf[2048];
 int send_buf_len = 0;
 char data_4_send_buf[2048];
@@ -61,6 +62,11 @@ int data_4_send_buf_len = 0;
 
 int sent_on_usock = 0;
 // message type is based on defines in sl_api.h
+char proc_buf[3*1024];
+int proc_buf_len = 0;
+bool server_status_override = false;
+bool comm_status_override = false;
+
 
 void get_data_der_settings()
 {
@@ -101,6 +107,8 @@ void get_data_der_settings()
         setMinV = (unsigned short)(der_sett.setMinVValue * pow(10, der_sett.setMinVMultiplier));
     }
     updated_time_dersett = der_sett.updatedTime;
+    // debug
+    fprintf(stdout, "==>>>  update time dersett %lld\n", updated_time_dersett);
 }
 
 void get_default_der_data()
@@ -141,6 +149,28 @@ void get_default_der_data()
         ESRmpTms = def_derc.setESRampTms;
     }
     default_derc_received = 1;
+    if (sts_init == false)
+    {
+        if (comm_status_override == false)
+        {
+            comm_status = true; // comm established
+        }
+        else 
+        {
+            before_override_comm_status = true;
+        }
+        if (server_status_override == false)
+        {
+            server_status = 1; // found
+        }
+        else 
+        {
+            before_override_server_status = 1;
+        }
+
+        sts_init = true;
+    }
+
 }
 
 void get_derc_ind_data() 
@@ -150,24 +180,41 @@ void get_derc_ind_data()
     memcpy(&derc_ind, recv_buf, len);
     if (derc_ind.derc.dercBase.opModFixedWExists)
     {
-        wset_pct_704 = derc_ind.derc.dercBase.opModFixedW;
+        wset_pct_704 = (int)(derc_ind.derc.dercBase.opModFixedW/100);
     }
     else 
     {
         wset_pct_704 = 0;
     }
-    enqueue_2(SSP_DER_WRITE_704_PARAMS);    
+
+
+    // debug
+    fprintf(stdout, "activeInfo eventRespStatus = %d \n", derc_ind.activeInfo.eventRespStatus);
+    fprintf(stdout, "DERC IND eventStatusCurrStatus = %d \n", derc_ind.eventStatusCurrStatus);
 
     //if (derc_ind.eventStatusCurrStatus == SL_XSD_EVENT_CURR_STATUS_ACTIVE)
     if (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_STARTED)
     {
         wset_pct_ena_704 = 1; // enable
+        // in case there are previous events, this will allow it to continue till 
+        // this event starts
+        enqueue_2(SSP_DER_WRITE_704_PARAMS);    
+        enqueue_2(SSP_DER_WRITE_704_ENABLE);
     }
-    else 
+    else if (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_MSG_RXED)
+    {
+        // do nothing wait for event to start
+    }
+    else if (
+        (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_COMPLETED) ||
+        (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_OPT_OUT) ||
+        (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_CANCELED) ||
+        (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_SUPERSEDED)
+    )
     {
         wset_pct_ena_704 = 0; // disable
+        enqueue_2(SSP_DER_WRITE_704_ENABLE);
     }
-    enqueue_2(SSP_DER_WRITE_704_ENABLE);
 
 }
 
@@ -358,11 +405,24 @@ void get_communication_status()
 {
     if (recv_buf[0])
     {
-        comm_status = true;
+        if (comm_status_override == false)
+        {
+            comm_status = true;
+        }
+        if (server_status_override == false)
+        {
+            if (server_status != 1)
+            {
+                server_status = 1;
+            }
+        }
     }
     else 
     {
-        comm_status = false;
+        if (comm_status_override == false)
+        {
+            comm_status = false;
+        }
     }
 }
 
@@ -454,7 +514,69 @@ void send_message(char *tmp_send_buf, int tmp_send_buf_len, uint32_t message_typ
     // console_log("sent %d bytes", sent_len);
 }
 
+/* TODO: Process packets in proc_buf, data
+  process both complete and incomplete packets. If complete packets recvd,
+  proc_buf_len is 0, else it contains the previous remaining data
+  after processing copy to the pipe buffer
+*/
+void processPackets()
+{
+    int bytesProcessed = 0;
+    uint32_t proto_message_type = 0;
+
+    while (bytesProcessed < proc_buf_len) {
+        if (proc_buf_len - bytesProcessed < 8) {
+            // Insufficient data for tag and length
+            break;
+        }
+
+        int t_length = bytesToInt(proc_buf, bytesProcessed);
+        // int t_tag = bytesToInt(proc_buf, bytesProcessed + 4);
+       
+        if (proc_buf_len - bytesProcessed < t_length) {
+            // Incomplete packet
+            break;
+        }
+
+        memcpy(recv_buf, &proc_buf[bytesProcessed+8] , t_length-8);
+        recv_buf_len = t_length-8;
+
+        // Process the complete packet
+        memcpy(&proto_message_type, &proc_buf[bytesProcessed+4], 4);
+        fprintf(stdout, "-------\n packet type = %02x\n ---------\n", proto_message_type);
+
+        process_protocol_message(proto_message_type);
+
+        // Update the bytes processed
+        bytesProcessed += t_length;
+        printf("bytesProc = %d, t_len = %d, proc buf len = %d\n", bytesProcessed, t_length, proc_buf_len);
+    }
+
+    if (bytesProcessed < proc_buf_len) {
+        // copy the last incomplete packet to the beginning of recv_buf
+        // processIncompletePackets(buffer + bytesProcessed, proc_buf_len - bytesProcessed);
+        recv_buf_len = proc_buf_len - bytesProcessed;
+        memcpy(recv_buf, proc_buf + bytesProcessed, recv_buf_len);
+        memcpy(proc_buf, recv_buf, recv_buf_len);
+        proc_buf_len = recv_buf_len;
+    }
+    else 
+    {
+        proc_buf_len = 0;
+    }
+}
+
 void process_recv_message(char *rd_buf, int rd_buf_len)
+{
+  memcpy(&proc_buf[proc_buf_len], rd_buf, rd_buf_len);
+  proc_buf_len += rd_buf_len;
+
+  processPackets();
+
+}
+
+
+void process_recv_message_old(char *rd_buf, int rd_buf_len)
 {
     // return the type of message received, and copy the contents of the message into recv_buf
     uint32_t proto_message_len = 0;

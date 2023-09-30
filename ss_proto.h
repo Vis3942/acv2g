@@ -271,8 +271,11 @@ extern short v_sf_705;
 extern short deptref_sf_705;
 extern short rsptms_sf_705;
 
-
+extern bool sts_init;
 extern bool comm_status;
+extern bool before_override_comm_status;
+extern int server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
+extern int before_override_server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
 
 void process_recv_message_ssproto();
 int get_ss_proto_task_id();

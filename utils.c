@@ -90,3 +90,16 @@ void displayTime()
   // fprintf(stdout, "%s.%03d", buffer, milliseconds)
   fprintf(stdout, "[%lu] ", (unsigned long)time(NULL));
 }
+
+int bytesToInt(char* bytes, int start_idx)
+{
+  int result = 0;
+  // debug
+  fprintf(stdout, "bytesToInt 0x%02x, 0x%02x, 0x%02x, 0x%02x\n", bytes[start_idx], bytes[start_idx + 1],
+        bytes[start_idx+2], bytes[start_idx+3]);
+  result |= bytes[start_idx  + 3] << 24;
+  result |= bytes[start_idx  + 2] << 16;
+  result |= bytes[start_idx  + 1] << 8;
+  result |= bytes[start_idx];
+  return result;
+}

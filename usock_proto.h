@@ -32,6 +32,7 @@ void send_dersettings_req();
 void test_mirror_usock();
 void test_ev_params_post_usock();
 extern int sent_on_usock;
-
+extern bool server_status_override; // der_avail CAN
+extern bool comm_status_override; // loc_evse CAN 
 
 #endif // USOCK_PROTO_H

@@ -5,7 +5,7 @@ void usock_message_handler();
 void usock_init();
 void usock_task();
 int usock_write_message(char* send_buf, int send_buf_len);
-void register_process_messages_callback(void (*ptr)( int *buffer, int size ));
+void register_process_messages_callback(void (*ptr)( char *buffer, int size ));
 void usock_client2server_accept();
 void usock_server2client_accept();
 void usock_client2server_read_message();

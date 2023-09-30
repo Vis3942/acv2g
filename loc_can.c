@@ -47,7 +47,11 @@ void can_transmit (int id, char *data, int length) {
   frame.can_dlc = length;
   memcpy (frame.data, data, length);
   sts = write (can_socket, &frame, sizeof (struct can_frame));
-  fprintf(stdout, "cansocket write id %d ; sts %d \n", id, sts);
+  //fprintf(stdout, "cansocket write id %d ; sts %d \n", id, sts);
+  if (sts != 16)
+  {
+    fprintf(stdout, "[check] cansocket write id %d ; sts %d \n", id, sts);  
+  }
 #ifdef PRINT_CAN_IDS  
   fprintf(stdout,"Transmitted %d [%d] [%d] [%d] [%d] [%d] \n", id, data[0], 
     data[1], data[2], data[3], data[4]);

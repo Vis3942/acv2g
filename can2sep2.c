@@ -57,9 +57,6 @@
 //#define BATTERY_CAPACITY_KWH 30
 
 // need for SCE: BEGIN
-int32_t server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
-int32_t prev_server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
-
 int32_t der_mode; // from HCP over CAN 0 => not opted, 1 => opted
 int32_t prev_der_mode; // from HCP over CAN 0 => not opted, 1 => opted
 
@@ -122,6 +119,11 @@ int test_der_wsetpct = 0;
 
 int test_ss_curve_data = 0;
 int test_ss_curve_type = -1;
+
+int test_der_avail_evcc = 0;
+int test_der_avail_val_evcc = 0;
+int test_loc_evcc = 0;
+int test_loc_val_evcc = 0; 
 
 int reverse_power_flow_flag;
 int reverse_power_flow_percent;
@@ -258,6 +260,89 @@ void can_message (int id, char *data_recv) {
     send_to_hcp = 0;
     break;
 
+  case 0x32B: // HCP_DER_MSG_01
+#ifdef PRINT_CAN_IDS
+  fprintf(stdout,"can id 0x32c: HCP_DER_MISC MSG_01 \n");
+  fprintf(stdout,"Tx %d [%d] [%d] [%d] [%d] [%d] [%d] [%d] [%d]\n", id, data_recv[0], 
+    data_recv[1], data_recv[2], data_recv[3], data_recv[4], 
+    data_recv[5], data_recv[6], data_recv[7]);
+
+#endif
+    send_to_hcp = 0;
+    // one cannot override if it is already overriden
+    // // debug 
+    // fprintf(stdout, "xxxx    data7 val = %02x xxxx \n", data_recv[7]);
+    if ((data_recv[7] & 0x01) == 0x01) // override server_status to NOT found
+    {
+      if (server_status_override == false)
+      {
+        before_override_server_status = server_status;
+        server_status = 0; // not found
+        server_status_override = true;
+      }
+      else 
+      {
+        fprintf(stdout, "Cannot override server status [false] (der_avail). Reset before override \n");
+      }
+    } 
+    else if ((data_recv[7] & 0x02) == 0x02) // override server status to found
+    {
+      if (server_status_override == false)
+      {
+        before_override_server_status = server_status;
+        server_status = 1; // found
+        server_status_override = true;
+      }
+      else 
+      {
+        fprintf(stdout, "Cannot override server status [true] (der_avail). Reset before override \n");
+      }
+
+    }
+    else if ((data_recv[7] & 0x04) == 0x04) // reset override
+    {
+      if (server_status_override == true)
+      {
+        server_status_override = false;
+        server_status = before_override_server_status;
+      }
+    }
+    if ( (data_recv[7] & 0x10) == 0x10) // override comm_status to false
+    {
+      if (comm_status_override == false)
+      {
+        before_override_comm_status = comm_status;
+        comm_status = false; // not found
+        comm_status_override = true;
+      }
+      else 
+      {
+        fprintf(stdout, "Cannot override comm status [false] (loc_evse=true). Reset before override \n");
+      }
+    } 
+    else if (( data_recv[7] & 0x20) == 0x20) // override comm status to found
+    {
+      if (comm_status_override == false)
+      {
+        before_override_comm_status = comm_status;
+        comm_status = true; // found
+        comm_status_override = true;
+      }
+      else 
+      {
+        fprintf(stdout, "Cannot override comm status [true] (loc_evse=false). Reset before override \n");
+      }
+    }
+    else if (( data_recv[7] & 0x40) == 0x40) // reset override
+    {
+      if (comm_status_override == true)
+      {
+        comm_status_override = false;
+        comm_status = before_override_comm_status;
+      }
+    }
+    break;
+
   default:
     // do nothing 
     send_to_hcp = 0;
@@ -271,6 +356,7 @@ void can_message (int id, char *data_recv) {
 
   if (send_to_hcp == 1) 
   {
+    evcc_es = (int32_t)ES; // usock updates ES, while the CAN message uses evcc_es, so sync both these variable before sending
     if (server_status == 1) 
     {
       data[0] = (1 << 4);
@@ -410,7 +496,7 @@ void message_received (int x) {
 
       if (conn_cli2srv_usock_fd > 0)
       {
-        fprintf(stdout, "read message client2server \n");
+        //fprintf(stdout, "read message client2server \n");
         if (FD_ISSET (conn_cli2srv_usock_fd, &rfds)) usock_client2server_read_message();
       }
     }
@@ -420,7 +506,7 @@ void message_received (int x) {
       // conn_srv2cli_usock_fd is only for writing messages
       if (FD_ISSET (proto_timerfd, &rfds))
       {
-        fprintf(stdout, "proto timer triggered \n");
+        //fprintf(stdout, "proto timer triggered \n");
         s = read(proto_timerfd, &exp_count, sizeof(uint64_t));
         if (s != sizeof(uint64_t))
         {
@@ -483,7 +569,9 @@ void print_options()
   printf("\t -b <number of regs to read>; specify number of regs to read as int \n");
   printf("\t -d <0 no der, 1 der present, specify -p for wsetpct>\n");
   printf("\t -p <wset pct can be +ve or -ve >\n");
-  printf("\t -q <send curves to OBCM 0 => for default volt-var curve; others values reserved>\n");
+  printf("\t -x <0 no der, 1 der present for EVCC test\n");
+  printf("\t -l <0  1 or 2 EVCC test\n");
+  printf("\t -q <send curves to OBCM 0 => for default volt-var curve; 1=> volt-watt curve; others values reserved>\n");
   printf("\t -h: print this help info\n");
   exit(EXIT_SUCCESS);
 }
@@ -522,7 +610,7 @@ int is_identifier_read_only(int app_ss_identifier)
 
 void parse_options (int argc, char **argv) {
   int arg;
-  while ((arg = getopt (argc, argv, "r:t:m:hce:s:a:b:d:p:q:")) != -1)
+  while ((arg = getopt (argc, argv, "r:t:m:hce:s:a:b:d:p:q:x:l:")) != -1)
   {
     switch (arg){
       case 'r':
@@ -587,6 +675,31 @@ void parse_options (int argc, char **argv) {
         test_ss_curve_data = 1;
         test_ss_curve_type = atoi(optarg);
         break;
+      case 'x':
+        test_der_avail_evcc = 1;
+        test_der_avail_val_evcc = atoi(optarg);
+        if (test_der_avail_val_evcc > 1)
+        {
+          test_der_avail_val_evcc = 1;
+        }
+        server_status = test_der_avail_val_evcc;
+        server_status_override = true;
+        before_override_server_status = false;
+        break;
+      case 'l':
+        test_loc_evcc = 1;
+        test_loc_val_evcc = atoi(optarg);
+        if (test_loc_val_evcc < 0)
+        {
+          test_loc_val_evcc = 0;
+        }
+        if (test_loc_val_evcc > 1)
+        {
+          test_loc_val_evcc = 1;
+        }
+        comm_status = test_loc_val_evcc;
+        comm_status_override = true;
+        before_override_comm_status = false;
       case '?':
         // Encountered an unknown or improperly formatted flag,
         // deal with these appropriately.
@@ -672,26 +785,34 @@ void parse_options (int argc, char **argv) {
   }
   else if (test_ss_curve_data == 1)
   {
-    if (test_ss_curve_type != 0)
-    {
-      fprintf("supported curve types are [0] => voltvar curve, type specified %d. Exit App\n", test_ss_curve_type);
-      exit(EXIT_FAILURE);
-    }
-    else 
+    // if (test_ss_curve_type != 0)
+    // {
+    // }
+    if (test_ss_curve_type == 0) 
     {
       volt_var_points_count = 4;
       volt_var_curve_received = 1;
       setVRef = (short)208;
       v_sf_705 = (short) setVRef;
       vamax_702 = (short)660;
-      volt_var_x[0] = 0.920*setVRef;
-      volt_var_y[0] = 0.30*vamax_702;
-      volt_var_x[1] = 0.967*setVRef;
-      volt_var_y[1] = 0;
-      volt_var_x[2] = 1.033*setVRef;
-      volt_var_y[2] = 0;
-      volt_var_x[3] = -0.30*vamax_702;
-      volt_var_y[3] = 0.30*vamax_702;
+      // volt_var_x[0] = 0.920*setVRef;
+      // volt_var_y[0] = 0.30*vamax_702;
+      // volt_var_x[1] = 0.967*setVRef;
+      // volt_var_y[1] = 0;
+      // volt_var_x[2] = 1.033*setVRef;
+      // volt_var_y[2] = 0;
+      // volt_var_x[3] = -0.30*vamax_702;
+      // volt_var_y[3] = 0.30*vamax_702;
+      // test values based on 1547 curve (provided by Yuki)
+      volt_var_y[0] = 0.920;
+      volt_var_x[0] = 0.30;
+      volt_var_y[1] = 0.97;
+      volt_var_x[1] = 0;
+      volt_var_y[2] = 1.033;
+      volt_var_x[2] = 0;
+      volt_var_y[3] = 1.07;
+      volt_var_x[3] = -0.30;
+
       enqueue(SSP_2_2_READ_702_CONFIG_INFO);
       enqueue(SSP_3_READ_705_SF);
       enqueue(SSP_3_WRITE_705_PARAMS_1);
@@ -700,6 +821,27 @@ void parse_options (int argc, char **argv) {
       enqueue(SSP_3_WRITE_705_CURVE_VERIFY_REQ);
       enqueue(SSP_3_READ_705_CURVE_VERIFY_RESP);
       enqueue(SSP_3_WRITE_705_CURVE_ENABLE);
+    }
+    else if (test_ss_curve_type == 1) 
+    {
+      volt_watt_points_count = 2;
+      volt_watt_curve_received = 1;
+      volt_watt_y[0] = 1.0675;
+      volt_watt_x[0] = 1.0;
+      volt_watt_y[1] = 1.1;
+      volt_watt_x[1] = 0;
+
+      enqueue(SSP_3_READ_706_SF);
+      enqueue(SSP_3_WRITE_706_PARAMS);
+      enqueue(SSP_3_WRITE_706_CURVE_DATA);
+      enqueue(SSP_3_WRITE_706_CURVE_VERIFY_REQ);
+      enqueue(SSP_3_READ_706_CURVE_VERIFY_RESP);
+      enqueue(SSP_3_WRITE_706_CURVE_ENABLE);
+    }
+    else 
+    {
+      fprintf(stdout, "supported curve types are [0,1] => voltvar curve, type specified %d. Exit App\n", test_ss_curve_type);
+      exit(EXIT_FAILURE);
     }
   }
 }
@@ -731,7 +873,9 @@ void parse_options (int argc, char **argv) {
 void init_data()
 {
   server_status = -1;
-  prev_server_status = 0;
+  before_override_server_status = 0;
+  comm_status = false;
+  before_override_comm_status = false;
   duration_secs = 0;
   prev_duration_secs = -1;
   charge_percent = 0;
@@ -754,7 +898,7 @@ void init_data()
 void init_ssproto()
 {
   if ( (!test_ss_proto_can) && (!test_custom_ss_model_read) && 
-       (!test_der_avail) && (!test_ss_curve_data) 
+       (test_der_avail == -1) && (!test_ss_curve_data) 
      ) 
   {
     enqueue(SSP_1_0_RECEIVED_DERSETTINGS);
@@ -776,7 +920,14 @@ void init_ssproto()
     enqueue(SSP_4_7_WRITE_FREQUENCY_MMR_SETUP);
     enqueue(SSP_5_1_RECEIVED_DEFAULT_DERCONTROL);
     enqueue(SSP_6_1_READ_701_REPORT_VALUE);
+    enqueue(SSP_6_2_READ_701_STATUS_VALUE);
     enqueue(SSP_DER_READ_704_SF);
+  }
+  else 
+  {
+    fprintf(stdout, "Regular init dd proto aborted for test scenarios\n");
+    fprintf(stdout, "test ss proto can = %d, custom ss model read = %d\n",test_ss_proto_can, test_custom_ss_model_read);
+    fprintf(stdout, "test der avail = %d, test ss curve data = %d\n",test_der_avail, test_ss_curve_data);
   }
 
 }
