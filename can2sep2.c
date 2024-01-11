@@ -398,6 +398,18 @@ void can_message (int id, char *data_recv) {
     data[7] = (uint8_t)get_current_state(); // ss proto can state
     can_transmit((int)0x329, data, 8);
   }
+
+  if ( 
+    (id == 0x306) || (id == 0x150) || (id == 0x3e8) || (id == 0x30F) ||
+    (id == 0x30D) || (id == 0x3D1) || (id == 0x30A) || (id == 0x30C) ||
+    (id == 0x2A4) || (id == 0x212) || (id == 0x2A5) || (id == 0x1D8) ||
+    (id == 0xB4) || (id == 0x326) || (id == 0x30E) || (id == 0x309) ||
+    (id == 0x3D0) || (id == 0x308) || (id == 0x2BA) 
+  )
+  {
+    write_can_data_csv(id, data_recv);
+  }
+
 }
 
 
@@ -1007,6 +1019,7 @@ void setup_timerfd_for_test()
 int main (int argc, char **argv) {
   version ();
   init_data();
+  init_can_data_csv();
   // options (argc-1, argv+1);
   parse_options(argc, argv);
   signal_init ();

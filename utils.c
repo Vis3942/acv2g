@@ -11,6 +11,8 @@ char * app_name = "CAN2SEP2 App";
 int console_logf_init = 0;
 
 int number_log_messages = 0;
+int number_data_messages = 0;
+char * can_data_filename = "/tmp/can_data.csv";
 
 int console_log(char *message,...)
 {
@@ -102,4 +104,41 @@ int bytesToInt(char* bytes, int start_idx)
   result |= bytes[start_idx  + 1] << 8;
   result |= bytes[start_idx];
   return result;
+}
+
+
+void init_can_data_csv()
+{
+  FILE *fpt;
+
+  fpt = fopen(can_data_filename, "w");
+
+  if (fpt != NULL)
+  {
+    fprintf(fpt, "id, data0, data1, data2, data3, data4, data5, data6, data7\n");
+    fclose(fpt);
+  }
+}
+
+void write_can_data_csv(int id, char*data)
+{
+  FILE *fpt;
+
+  if (number_data_messages > MAX_NUM_DATA_MESSAGES)
+  {
+    return;
+  }
+
+
+  fpt = fopen(can_data_filename, "a");
+
+  if (fpt != NULL)
+  {
+    number_data_messages ++;
+    fprintf(fpt, "%d, %d, %d, %d, %d, %d, %d, %d, %d\n",
+      id, data[0], data[1], data[2], data[3], data[4], 
+      data[5], data[6], data[7]);
+    fclose(fpt);
+  }
+
 }
