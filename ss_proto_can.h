@@ -11,7 +11,7 @@
 #define SSP_CAN_TX_ID 0x30D
 #define SSP_CAN_RX_ID 0x30E
 
-#define SSP_CAN_TIMEOUT_MILLIS 200
+#define SSP_CAN_TIMEOUT_MILLIS 1200
 #define SSP_CAN_MAX_RETRIES 0x03
 #define SSP_ERROR_MAX_COUNT 25
 
@@ -28,6 +28,7 @@ void set_ack_transmit();
 unsigned char get_current_state();
 void start_ss_can_proto();
 void recv_ss_can_message(char* data);
+void check_response_timeout();
 
 
 #endif // SS_PROTO_CAN_H

@@ -351,8 +351,19 @@ void can_message (int id, char *data_recv) {
 #ifdef PRINT_CAN_IDS
   fprintf(stdout,"Rx %d [%d] [%d] [%d] [%d] [%d] [%d] [%d] [%d]\n", id, data_recv[0], 
     data_recv[1], data_recv[2], data_recv[3], data_recv[4], 
-    data_recv[5], data_recv[6], data_recv[7]);
+    da
+    ta_recv[5], data_recv[6], data_recv[7]);
 #endif
+  if ( 
+    (id == 0x306) || (id == 0x150) || (id == 0x3e8) || (id == 0x30F) ||
+    (id == 0x30D) || (id == 0x3D1) || (id == 0x30A) || (id == 0x30C) ||
+    (id == 0x2A4) || (id == 0x212) || (id == 0x2A5) || (id == 0x1D8) ||
+    (id == 0xB4) || (id == 0x326) || (id == 0x30E) || (id == 0x309) ||
+    (id == 0x3D0) || (id == 0x308) || (id == 0x2BA) 
+  )
+  {
+    write_can_data_csv(id, data_recv);
+  }
 
   if (send_to_hcp == 1) 
   {
@@ -387,7 +398,8 @@ void can_message (int id, char *data_recv) {
     data[6] = 0;
     data[7] = 0;
     can_transmit((int)0x30F, data, 8);
-    usleep(5000);
+    write_can_data_csv((int)0x30F, data);
+    usleep(2500);
     data[0] = 0;
     data[1] = 0;
     data[2] = 0;
@@ -397,19 +409,10 @@ void can_message (int id, char *data_recv) {
     data[6] = (uint8_t)get_ss_proto_task_id(); // ss proto task id
     data[7] = (uint8_t)get_current_state(); // ss proto can state
     can_transmit((int)0x329, data, 8);
+    write_can_data_csv((int)0x329, data);
   }
-
-  if ( 
-    (id == 0x306) || (id == 0x150) || (id == 0x3e8) || (id == 0x30F) ||
-    (id == 0x30D) || (id == 0x3D1) || (id == 0x30A) || (id == 0x30C) ||
-    (id == 0x2A4) || (id == 0x212) || (id == 0x2A5) || (id == 0x1D8) ||
-    (id == 0xB4) || (id == 0x326) || (id == 0x30E) || (id == 0x309) ||
-    (id == 0x3D0) || (id == 0x308) || (id == 0x2BA) 
-  )
-  {
-    write_can_data_csv(id, data_recv);
-  }
-
+  // timeout for ss proto => no response for state in COMMAND_STATE
+  check_response_timeout();
 }
 
 

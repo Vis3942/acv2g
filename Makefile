@@ -11,7 +11,7 @@
 CROSS=arm-none-linux-gnueabi-
 CC := $(CROSS)gcc
 #CFLAGS := -v -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN
-CFLAGS := -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN
+CFLAGS := -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN 
 STRIP := $(CROSS)strip
 TARGET := can2sep2
 OBJFILES := loc_can.o usock.o ss_proto_can.o ss_proto.o task_queue.o usock_proto.o usock_utils.o utils.o usock_server.o can2sep2.o 

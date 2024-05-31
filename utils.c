@@ -115,7 +115,7 @@ void init_can_data_csv()
 
   if (fpt != NULL)
   {
-    fprintf(fpt, "id, data0, data1, data2, data3, data4, data5, data6, data7\n");
+    fprintf(fpt, "id, data0, data1, data2, data3, data4, data5, data6, data7, timestamp\n");
     fclose(fpt);
   }
 }
@@ -135,9 +135,9 @@ void write_can_data_csv(int id, char*data)
   if (fpt != NULL)
   {
     number_data_messages ++;
-    fprintf(fpt, "%d, %d, %d, %d, %d, %d, %d, %d, %d\n",
+    fprintf(fpt, "%d, %d, %d, %d, %d, %d, %d, %d, %d, %u\n",
       id, data[0], data[1], data[2], data[3], data[4], 
-      data[5], data[6], data[7]);
+      data[5], data[6], data[7], (unsigned)time(NULL));
     fclose(fpt);
   }
 

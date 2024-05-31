@@ -120,35 +120,49 @@ void get_default_der_data()
     {
         ES = def_derc.dercBase.opModEnergize;
     }
-    else
-    {
-        ES = 0;
-    }
+    // else
+    // {
+    //     ES = 0;
+    // }
     if (def_derc.setESHighFreqExists)
     {
         ESHzHi = def_derc.setESHighFreq;
+        ESHzHi_source = 1;
+        fprintf(stdout, "setESHighFreq. val = %u.\n", ESHzHi);
     }
     if (def_derc.setESHighVoltExists)
     {
         ESVHi = def_derc.setESHighVolt;
-    }
-    if (def_derc.setESLowVoltExists)
-    {
-        ESHzLo = def_derc.setESLowVolt;
+        ESVHi_source = 1;
+        fprintf(stdout, "setESHighVolt. val = %u.\n", ESVHi);
     }
     if (def_derc.setESLowVoltExists)
     {
         ESVLo = def_derc.setESLowVolt;
+        ESVLo_source = 1;
+        fprintf(stdout, "setESLowVolt. val = %u.\n", ESVLo);
+    }
+    if (def_derc.setESLowFreqExists)
+    {
+        ESHzLo = def_derc.setESLowFreq;
+        ESHzLo_source = 1;
+        fprintf(stdout, "setESLowFreq. val = %u.\n", ESHzLo);
     }
     if (def_derc.setESDelayExists)
     {
         ESDlyTms = def_derc.setESDelay;
+        ESDlyTms_source = 1;
+        fprintf(stdout, "setESDelay. val = %u.\n", ESDlyTms);
     }
     if (def_derc.setESRampTmsExists)
     {
         ESRmpTms = def_derc.setESRampTms;
+        ESRmpTms_source = 1;
+        fprintf(stdout, "setESRampTms. val = %u.\n", ESRmpTms);
     }
     default_derc_received = 1;
+    // debug
+    fprintf(stdout, "default derc recvd. set to 1.\n");
     if (sts_init == false)
     {
         if (comm_status_override == false)
@@ -224,11 +238,23 @@ void get_freq_droop_data()
     sl_xsd_freq_droop_t freq_droop = {0};
     int len = sizeof(freq_droop);
     memcpy(&freq_droop, recv_buf, len);
-    DbOf = freq_droop.dBOF;
-    DbUf = freq_droop.dBUF;
-    KOf = freq_droop.kOF;
-    KUf = freq_droop.kUF;
-    RspTms = freq_droop.openLoopTms;
+    DbOf = freq_droop.dBOF/1000.0f; // in 2030.5 values multiplied by 1000
+    DbUf = freq_droop.dBUF/1000.0f; // in 2030.5 values multiplied by 1000
+    KOf = freq_droop.kOF/1000.0f; // in 2030.5 values multiplied by 1000
+    KUf = freq_droop.kUF/1000.0f; // in 2030.5 values multiplied by 1000
+    RspTms = freq_droop.openLoopTms/100; // in 2030.5 values multiplied by 100;
+    // debug
+    fprintf(stdout, "<<<<xxxx>>>>!!!! Freq Droop processing\n");
+    fprintf(stdout, "dbof = %.3f, \t dbuf=%.3f \n", DbOf, DbUf);
+    fprintf(stdout, "KoF  = %.3f, \t KUF =%.3f, Rsptms = %.3f \n", KOf, KUf, RspTms);
+
+    enqueue_2(SSP_3_READ_711_SF);
+    enqueue_2(SSP_3_WRITE_711_PARAMS);
+    enqueue_2(SSP_3_WRITE_711_CURVE_DATA);
+    enqueue_2(SSP_3_WRITE_711_CURVE_VERIFY_REQ);
+    enqueue_2(SSP_3_READ_711_CURVE_VERIFY_RESP);
+    enqueue_2(SSP_3_WRITE_711_CURVE_ENABLE);
+
 }
 
 void get_curve_data()
@@ -240,8 +266,9 @@ void get_curve_data()
     int *pts_count;
     int *curve_received;
     int ii;
-    int x_mul;
-    int y_mul;
+    float x_mul;
+    float y_mul;
+    i8_t tmp_i8t;
     memcpy(&curve, recv_buf, len);
 
     if (curve.curveType == SL_XSD_CURVE_TYPE_VOLT_WATT)
@@ -250,6 +277,8 @@ void get_curve_data()
         y_pts = &volt_watt_y[0];
         pts_count = &volt_watt_points_count;
         curve_received = &volt_watt_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Watt curve processing\n");
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_VOLT_VAR)
     {
@@ -257,6 +286,8 @@ void get_curve_data()
         y_pts = &volt_var_y[0];
         pts_count = &volt_var_points_count;
         curve_received = &volt_var_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Var curve processing\n");
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_WATT_VAR)
     {
@@ -264,6 +295,8 @@ void get_curve_data()
         y_pts = &watt_var_y[0];
         pts_count = &watt_var_points_count;
         curve_received = &watt_var_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! Watt Var curve processing\n");
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
     {
@@ -271,6 +304,17 @@ void get_curve_data()
         y_pts = &low_volt_trip_y[0];
         pts_count = &low_volt_trip_points_count;
         curve_received = &low_volt_trip_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Must Trip curve processing\n");
+    }
+    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
+    {
+        x_pts = &low_volt_cess_x[0];
+        y_pts = &low_volt_cess_y[0];
+        pts_count = &low_volt_cess_points_count;
+        curve_received = &low_volt_cess_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Mome Cess curve processing\n");
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
     {
@@ -278,6 +322,17 @@ void get_curve_data()
         y_pts = &high_volt_trip_y[0];
         pts_count = &high_volt_trip_points_count;
         curve_received = &high_volt_trip_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Must Trip curve processing\n");
+    }
+    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
+    {
+        x_pts = &high_volt_cess_x[0];
+        y_pts = &high_volt_cess_y[0];
+        pts_count = &high_volt_cess_points_count;
+        curve_received = &high_volt_cess_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Mome Cess curve processing\n");
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
     {
@@ -285,6 +340,8 @@ void get_curve_data()
         y_pts = &low_freq_trip_y[0];
         pts_count = &low_freq_trip_points_count;
         curve_received = &low_freq_trip_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LFreq RT curve processing\n");
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP)
     {
@@ -292,6 +349,26 @@ void get_curve_data()
         y_pts = &high_freq_trip_y[0];
         pts_count = &high_freq_trip_points_count;
         curve_received = &high_freq_trip_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HFreq RT curve processing\n");
+    }
+    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
+    {
+        x_pts = &low_volt_cess_x[0];
+        y_pts = &low_volt_cess_y[0];
+        pts_count = &low_volt_cess_points_count;
+        curve_received = &low_volt_cess_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Mom Cess curve processing\n");
+    }
+    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
+    {
+        x_pts = &high_volt_cess_x[0];
+        y_pts = &high_volt_cess_y[0];
+        pts_count = &high_volt_cess_points_count;
+        curve_received = &high_volt_cess_curve_received;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Mom Cess curve processing\n");
     }
     else
     {
@@ -299,19 +376,19 @@ void get_curve_data()
         return;
     }
 
-    x_mul = curve.xMultiplier;
-    if ((x_mul < -9) || (x_mul > 9))
+    tmp_i8t = curve.xMultiplier;
+    if ((tmp_i8t < (i8_t)(-9)) || (tmp_i8t > (i8_t)(9)))
     {
-        x_mul = 0;
+        tmp_i8t = 0;
     }
-    x_mul = (int)pow(10, x_mul); // actual value to multiply by
+    x_mul = (float)pow(10, tmp_i8t); // actual value to multiply by
 
-    y_mul = curve.yMultiplier;
-    if ((y_mul < -9) || (y_mul > 9))
+    tmp_i8t = curve.yMultiplier;
+   if ((tmp_i8t < (i8_t)(-9)) || (tmp_i8t > (i8_t)(9)))
     {
-        y_mul = 0;
+           tmp_i8t = 0;
     }
-    y_mul = pow(10, y_mul); // actual value to multiply by
+    y_mul = (float)pow(10, tmp_i8t); // actual value to multiply by
 
     *pts_count = curve.numCurveData;
     *pts_count = MIN(*pts_count, NUM_POINTS_CURVE); //  incase more points come, use only available values
@@ -319,6 +396,8 @@ void get_curve_data()
     {
         x_pts[ii] = (float)(curve.curveData[ii].xValue * x_mul);
         y_pts[ii] = (float)(curve.curveData[ii].yValue * y_mul);
+        fprintf(stdout, "[%d]: cx = %d, \t cy=%d \n", ii, curve.curveData[ii].xValue, curve.curveData[ii].yValue);
+        fprintf(stdout, "[%d]: x  = %.2f, \t y=%.2f \n", ii, x_pts[ii], y_pts[ii]);
     }
 
     *curve_received = 1;
@@ -353,21 +432,55 @@ void get_curve_data()
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
     {
-        enqueue_2(SSP_3_READ_707_SF);
-        enqueue_2(SSP_3_WRITE_707_PARAMS);
-        enqueue_2(SSP_3_WRITE_707_CURVE_DATA);
-        enqueue_2(SSP_3_WRITE_707_CURVE_VERIFY_REQ);
-        enqueue_2(SSP_3_READ_707_CURVE_VERIFY_RESP);
-        enqueue_2(SSP_3_WRITE_707_CURVE_ENABLE);
+        if (low_volt_cess_curve_received == 1) 
+        {
+            enqueue_2(SSP_3_READ_707_SF);
+            enqueue_2(SSP_3_WRITE_707_PARAMS);
+            enqueue_2(SSP_3_WRITE_707_CURVE_DATA_MUST_TRIP);
+            enqueue_2(SSP_3_WRITE_707_CURVE_DATA_MOME_CESS);
+            enqueue_2(SSP_3_WRITE_707_CURVE_VERIFY_REQ);
+            enqueue_2(SSP_3_READ_707_CURVE_VERIFY_RESP);
+            enqueue_2(SSP_3_WRITE_707_CURVE_ENABLE);
+        }
+    }
+    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
+    {
+        if (low_volt_trip_curve_received == 1)
+        {
+            enqueue_2(SSP_3_READ_707_SF);
+            enqueue_2(SSP_3_WRITE_707_PARAMS);
+            enqueue_2(SSP_3_WRITE_707_CURVE_DATA_MUST_TRIP);
+            enqueue_2(SSP_3_WRITE_707_CURVE_DATA_MOME_CESS);
+            enqueue_2(SSP_3_WRITE_707_CURVE_VERIFY_REQ);
+            enqueue_2(SSP_3_READ_707_CURVE_VERIFY_RESP);
+            enqueue_2(SSP_3_WRITE_707_CURVE_ENABLE);
+        }
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
     {
-        enqueue_2(SSP_3_READ_708_SF);
-        enqueue_2(SSP_3_WRITE_708_PARAMS);
-        enqueue_2(SSP_3_WRITE_708_CURVE_DATA);
-        enqueue_2(SSP_3_WRITE_708_CURVE_VERIFY_REQ);
-        enqueue_2(SSP_3_READ_708_CURVE_VERIFY_RESP);
-        enqueue_2(SSP_3_WRITE_708_CURVE_ENABLE);
+        if (high_volt_cess_curve_received == 1)
+        {
+            enqueue_2(SSP_3_READ_708_SF);
+            enqueue_2(SSP_3_WRITE_708_PARAMS);
+            enqueue_2(SSP_3_WRITE_708_CURVE_DATA_MUST_TRIP);
+            enqueue_2(SSP_3_WRITE_708_CURVE_DATA_MOME_CESS);
+            enqueue_2(SSP_3_WRITE_708_CURVE_VERIFY_REQ);
+            enqueue_2(SSP_3_READ_708_CURVE_VERIFY_RESP);
+            enqueue_2(SSP_3_WRITE_708_CURVE_ENABLE);
+        }
+    }
+    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
+    {
+        if (high_volt_trip_curve_received == 1) 
+        {
+            enqueue_2(SSP_3_READ_708_SF);
+            enqueue_2(SSP_3_WRITE_708_PARAMS);
+            enqueue_2(SSP_3_WRITE_708_CURVE_DATA_MUST_TRIP);
+            enqueue_2(SSP_3_WRITE_708_CURVE_DATA_MOME_CESS);
+            enqueue_2(SSP_3_WRITE_708_CURVE_VERIFY_REQ);
+            enqueue_2(SSP_3_READ_708_CURVE_VERIFY_RESP);
+            enqueue_2(SSP_3_WRITE_708_CURVE_ENABLE);
+        }
     }
     else if (curve.curveType == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
     {
@@ -531,6 +644,13 @@ void processPackets()
         }
 
         int t_length = bytesToInt(proc_buf, bytesProcessed);
+        if (t_length == 0) 
+        {
+          fprintf(stdout, "---->>>>computed length is 0 exit loop discard data<<<<------ \n" );
+          // discard packet
+          bytesProcessed = proc_buf_len;
+          break;
+        }
         // int t_tag = bytesToInt(proc_buf, bytesProcessed + 4);
        
         if (proc_buf_len - bytesProcessed < t_length) {
@@ -794,7 +914,8 @@ void send_deviceinfo_req()
     int ii;
     sl_edinfo_client_send_dinfo_req dinfo_req = {0};
     dinfo_req.devInfo.mfDate = J3072_CERTIFIED_DATE;
-    memcpy(dinfo_req.devInfo.mfHWVersion, "J3072 Certified", 15);
+    strncpy(dinfo_req.devInfo.mfHWVersion, "J3072 Certified", 15);
+    //memcpy(dinfo_req.devInfo.mfHWVersion, "J3072 Certified", 15);
     memcpy(dinfo_req.devInfo.mfInfo, MANUFACTURER, MANUFACTURER_LEN);
     tmp_i = strlen(model_str_001);
     memcpy(dinfo_req.devInfo.mfModel, model_str_001, tmp_i);

@@ -43,19 +43,21 @@
 // this data goes to model 707
 #define SSP_3_READ_707_SF 70
 #define SSP_3_WRITE_707_PARAMS 71
-#define SSP_3_WRITE_707_CURVE_DATA 72
+#define SSP_3_WRITE_707_CURVE_DATA_MUST_TRIP 72
 #define SSP_3_WRITE_707_CURVE_VERIFY_REQ 73
 #define SSP_3_READ_707_CURVE_VERIFY_RESP 74
 #define SSP_3_WRITE_707_CURVE_ENABLE 75
+#define SSP_3_WRITE_707_CURVE_DATA_MOME_CESS 76
 
 // steps to perform when app receives opModHVRTMustTrip DERCurve from SEP2 client
 // this data goes to model 708
 #define SSP_3_READ_708_SF 80
 #define SSP_3_WRITE_708_PARAMS 81
-#define SSP_3_WRITE_708_CURVE_DATA 82
+#define SSP_3_WRITE_708_CURVE_DATA_MUST_TRIP 82
 #define SSP_3_WRITE_708_CURVE_VERIFY_REQ 83
 #define SSP_3_READ_708_CURVE_VERIFY_RESP 84
 #define SSP_3_WRITE_708_CURVE_ENABLE 85
+#define SSP_3_WRITE_708_CURVE_DATA_MOME_CESS 86
 
 // steps to perform when app receives opModLFRMustTrip DERCurve from SEP2 client
 // this data goes to model 709
@@ -176,11 +178,18 @@ extern short vmin_702;
 
 extern bool ES ; // default_derc.base.opmodenergize
 extern uint32_t ESHzHi ; // default_derc.setESHighFreq
-extern short ESVHi ; // default_derc.setESHighVolt
+extern uint32_t ESVHi ; // default_derc.setESHighVolt
 extern uint32_t ESHzLo ; // default_derc.setESLowFreq
-extern short ESVLo ; // default_derc.setESLowVolt
+extern uint32_t ESVLo ; // default_derc.setESLowVolt
 extern uint32_t ESDlyTms ; //  default_derc.setESDelay
 extern uint32_t ESRmpTms ; // default_derc.setESRampTms
+extern short ESHzHi_source ; // default_derc.setESHighFreq
+extern short ESVHi_source ; // default_derc.setESHighVolt
+extern short ESHzLo_source ; // default_derc.setESLowFreq
+extern short ESVLo_source ; // default_derc.setESLowVolt
+extern short ESDlyTms_source ; //  default_derc.setESDelay
+extern short ESRmpTms_source ; // default_derc.setESRampTms
+
 extern short v_sf_703;
 extern short hz_sf_703;
 extern int default_derc_received;                         
@@ -189,11 +198,11 @@ extern char model_str_001[NUM_MODEL_CHARS+1]; // +1 for zero char at end
 extern char version_str_001[NUM_VERSION_CHARS+1]; // +1 for zero char at end
 
 
-extern uint32_t DbOf ; 
-extern uint32_t DbUf ;
-extern uint16_t KOf ;
-extern uint16_t KUf ;
-extern uint16_t RspTms ; //  opModFReqDroop.openLoopTms
+extern float DbOf ; 
+extern float DbUf ;
+extern float KOf ;
+extern float KUf ;
+extern float RspTms ; //  opModFReqDroop.openLoopTms
 extern int freq_droop_curve_received; // valie is 1 if received
 extern int freq_droop_curve_verify; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
@@ -222,11 +231,21 @@ extern float low_volt_trip_x[NUM_POINTS_CURVE];
 extern float low_volt_trip_y[NUM_POINTS_CURVE];
 extern int low_volt_trip_curve_verify;
 
+extern int low_volt_cess_curve_received ; // valie is 1 if received
+extern int low_volt_cess_points_count ;
+extern float low_volt_cess_x[NUM_POINTS_CURVE];
+extern float low_volt_cess_y[NUM_POINTS_CURVE];
+
 extern int high_volt_trip_curve_received ; // valie is 1 if received
 extern int high_volt_trip_points_count ;
 extern float high_volt_trip_x[NUM_POINTS_CURVE];
 extern float high_volt_trip_y[NUM_POINTS_CURVE];
 extern int high_volt_trip_curve_verify;
+
+extern int high_volt_cess_curve_received ; // valie is 1 if received
+extern int high_volt_cess_points_count ;
+extern float high_volt_cess_x[NUM_POINTS_CURVE];
+extern float high_volt_cess_y[NUM_POINTS_CURVE];
 
 extern int low_freq_trip_curve_received ; // valie is 1 if received
 extern int low_freq_trip_points_count ;
@@ -239,6 +258,18 @@ extern int high_freq_trip_points_count ;
 extern float high_freq_trip_x[NUM_POINTS_CURVE];
 extern float high_freq_trip_y[NUM_POINTS_CURVE];
 extern int high_freq_trip_curve_verify;
+
+extern int low_volt_cess_curve_received ; // valie is 1 if received
+extern int low_volt_cess_points_count ;
+extern float low_volt_cess_x[NUM_POINTS_CURVE];
+extern float low_volt_cess_y[NUM_POINTS_CURVE];
+extern int low_volt_cess_curve_verify;
+
+extern int high_volt_cess_curve_received ; // valie is 1 if received
+extern int high_volt_cess_points_count ;
+extern float high_volt_cess_x[NUM_POINTS_CURVE];
+extern float high_volt_cess_y[NUM_POINTS_CURVE];
+extern int high_volt_cess_curve_verify;
 
 extern uint16_t actype_sep2;
 

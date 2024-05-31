@@ -4,7 +4,9 @@
 #include <stdint.h>
 
 // version definition => byte major version.byte minor version 
-#define VERSION 0x0101 // version 1.1
+#define VERSION 0x0105 // version 1.5
+// 1.1 AND 1.2 SUPPORT LOGGGING CAN DATA TO CSV FILE ()
+// 1.3 ADD TIMESTAMP to end of can data log in csv file 
 #define ISMN_MF_MODEL "A142C4Pacifica15.5kWVersion21301" // do not use this use what is read from OBCM
 #define VIN_NUM_MF_SERNUM "2C4RC1N73JR116150"
 #define VIN_NUM_LEN 17

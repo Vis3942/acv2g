@@ -59,6 +59,13 @@ void check_response_timeout()
           error_state_count = 0;
           can_transmit_millis = get_now_time();
         }
+        else 
+        {
+          current_state = SSP_COMMAND_STATE;
+          curr_ss_tx_idx = 0;
+          curr_ss_tx_serial_number = 0;
+          send_ss_can_message();
+        }
       }
     }
   }
@@ -67,10 +74,11 @@ void check_response_timeout()
     error_state_count++;
     if (error_state_count > SSP_ERROR_MAX_COUNT)
     {
-      current_state = SSP_COMMAND_STATE;
-      curr_ss_tx_idx = 0;
-      curr_ss_tx_serial_number = 0;
-      send_ss_can_message();
+      //current_state = SSP_COMMAND_STATE;
+      //curr_ss_tx_idx = 0;
+      //curr_ss_tx_serial_number = 0;
+      //send_ss_can_message();
+      current_state = SSP_IDLE_STATE; // GO TO THE NEXT COMMAND FAILED RETRY ATTEMPTS
     }
   }
 }
@@ -105,7 +113,7 @@ void set_ack_transmit()
 void recv_ss_can_message(char* data)
 {
   int tmp_ser_num = -1;
-  if (current_state == SSP_COMMAND_STATE) 
+  if ( (current_state == SSP_COMMAND_STATE) || (current_state == SSP_ERROR_STATE) )
   {
     tmp_ser_num = (int) (data[1] & 0x1F);
     if (tmp_ser_num == curr_ss_tx_serial_number) 

@@ -8,12 +8,14 @@
 
 #include "usock_utils.h"
 
+#define USOCK_READ_BUF_LEN  4096 // SAME SIZE AS RECV BUFFER
+
 char *sep2_client2server_path = "/tmp/client2server";
 char *sep2_server2client_path = "/tmp/server2client";
 
 int cli2srv_usock_fd = -1;
 int conn_cli2srv_usock_fd = -1;
-char rd_buf[1024];
+char rd_buf[USOCK_READ_BUF_LEN];
 
 static void (*process_messages)(char *buffer, int size) = NULL;
 
@@ -30,7 +32,7 @@ void usock_client2server_open()
   conn_cli2srv_usock_fd = 0;
 
   struct sockaddr_un addr;
-  if ( (cli2srv_usock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) {
+  if ( (cli2srv_usock_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0)) == -1 ) {
     perror ("unix socket error");
     exit (-1);
   }
@@ -41,7 +43,7 @@ void usock_client2server_open()
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, sep2_client2server_path, sizeof(addr.sun_path)-1);
 
-  async_enable(cli2srv_usock_fd, 0);
+  //async_enable(cli2srv_usock_fd, 0);
 
   if (bind(cli2srv_usock_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1  ) 
   {
@@ -101,10 +103,10 @@ void usock_client2server_read_message()
 {
   int n;
   // read data that the client sent to the server
-  memset(rd_buf, 0, sizeof(rd_buf));
-  n = recv(conn_cli2srv_usock_fd, rd_buf, sizeof(rd_buf), 0);
+  memset(rd_buf, 0, USOCK_READ_BUF_LEN);
+  n = recv(conn_cli2srv_usock_fd, rd_buf, USOCK_READ_BUF_LEN, 0);
   //debug
-  printf(" recvd from client: %d bytes\n", n);
+  //printf(" recvd from client: %d bytes\n", n);
 
   if (n < 0) {
     perror("recv from client:");
@@ -119,8 +121,8 @@ void usock_client2server_read_message()
     // process the message
     if (process_messages != NULL) {
       // debug
-      //printf("processing message at %0xld\n", process_messages);
-      printf("processing message \n");
+      //printf("processing message at %0xld of length [%d]\n", process_messages, n);
+      fprintf(stdout, "processing message of length [%d], process func is set = %d \n", n, (process_messages != NULL));
       (*process_messages)(rd_buf, n);
     }
   }
@@ -132,10 +134,10 @@ char wr_buf[1024];
 
 void usock_server2client_open()
 {
-  conn_srv2cli_usock_fd = 0;
+  conn_srv2cli_usock_fd = -1;
 
   struct sockaddr_un addr;
-  if ( (srv2cli_usock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1 ) {
+  if ( (srv2cli_usock_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0)) == -1 ) {
     perror ("unix socket error");
     exit (-1);
   }
@@ -146,7 +148,7 @@ void usock_server2client_open()
   addr.sun_family = AF_UNIX;
   strncpy(addr.sun_path, sep2_server2client_path, sizeof(addr.sun_path)-1);
 
-  async_enable(srv2cli_usock_fd, 0);
+  //async_enable(srv2cli_usock_fd, 0);
 
   if (bind(srv2cli_usock_fd, (struct sockaddr*)&addr, sizeof(addr)) == -1  ) 
   {
@@ -180,8 +182,7 @@ void usock_server2client_accept()
     conn_srv2cli_usock_fd = -1;
   }
   conn_srv2cli_usock_fd = tmp_fd;
-  async_enable(conn_srv2cli_usock_fd, 0);
-  
+  //async_enable(conn_srv2cli_usock_fd, 0);
 }
 
 void usock_server2client_close()
@@ -241,7 +242,7 @@ void usock_message_handler () {
   {
     FD_SET (conn_cli2srv_usock_fd, &rfds);
   }
-  printf("in message received \n");
+  // printf("in message received \n");
   //printf(" conn_cli2srv usock fd => %d, nfds = %d\n", conn_cli2srv_usock_fd, nfds);
   // no timeout
   //while (select (nfds, &rfds, NULL, NULL, NULL) > 0) {
