@@ -76,6 +76,7 @@ short vnom_702 = 0;
 short vmax_702 = 0;
 short vmin_702 = 0;
 
+bool prev_ES = 0; // previos state of ES write 703 ES value only when there is a state change
 bool ES = 0;               // default_derc.base.opmodenergize
 uint32_t ESHzHi = 0;     // default_derc.setESHighFreq
 short ESHzHi_source = 0;     // 0 default values read from OBCM sunspec module, 1 received over 2030.5 client
@@ -91,7 +92,7 @@ uint32_t ESRmpTms = 0;         // default_derc.setESRampTms
 short ESRmpTms_source = 0;     // 0 default values read from OBCM sunspec module, 1 received over 2030.5 client
 short v_sf_703 = 0;
 short hz_sf_703 = 0;
-int default_derc_received = 0; // 1 if recvd
+int default_derc_received = -1; // -1 init, 0 recvd and written; // 1 if recvd
 int wset_pct_704 = 0;
 short wset_pct_ena_704 = 0;
 
@@ -110,28 +111,37 @@ int freq_droop_curve_verify = 0; // 0 => still evaluating, 1 => complete (succes
 // for actype model 701
 uint16_t actype_sep2 = 0;
 
-int volt_var_curve_received = 0; // valie is 1 if received
-int volt_var_points_count = 0;
-float volt_var_x[NUM_POINTS_CURVE];
-float volt_var_y[NUM_POINTS_CURVE];
-int volt_var_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+int volt_var_curve_received[MAX_SUPERSEDE_EVENTS] = {0}; // valie is 1 if received
+int volt_var_points_count[MAX_SUPERSEDE_EVENTS] = {0};
+float volt_var_x[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+float volt_var_y[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+int volt_var_curve_verify[MAX_SUPERSEDE_EVENTS] = {0}; // 0 => still evaluating, 1 => complete (success), 2 => failed
+u8_t volt_var_curve_derc_mrid[MAX_SUPERSEDE_EVENTS][SL_XSD_MRID_LEN];
+int volt_var_current_curve_index = 0;
+int volt_var_set_curve_index = 0;
 
+// Note: Watt var curve is not included in the rule 21 based curve settings and verifications
 int watt_var_curve_received = 0; // valie is 1 if received
 int watt_var_points_count = 0;
 float watt_var_x[NUM_POINTS_CURVE];
 float watt_var_y[NUM_POINTS_CURVE];
+u8_t watt_var_curve_derc_mrid[SL_XSD_MRID_LEN];
 int watt_var_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
-int volt_watt_curve_received = 0; // valie is 1 if received
-int volt_watt_points_count = 0;
-float volt_watt_x[NUM_POINTS_CURVE];
-float volt_watt_y[NUM_POINTS_CURVE];
-int volt_watt_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
+int volt_watt_curve_received[MAX_SUPERSEDE_EVENTS] = {0}; // valie is 1 if received
+int volt_watt_points_count[MAX_SUPERSEDE_EVENTS] = {0};
+float volt_watt_x[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+float volt_watt_y[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+int volt_watt_curve_verify[MAX_SUPERSEDE_EVENTS] = {0}; // 0 => still evaluating, 1 => complete (success), 2 => failed
+u8_t volt_watt_curve_derc_mrid[MAX_SUPERSEDE_EVENTS][SL_XSD_MRID_LEN];
+int volt_watt_current_curve_index = 0;
+int volt_watt_set_curve_index = 0;
 
 int low_volt_trip_curve_received = 0; // valie is 1 if received
 int low_volt_trip_points_count = 0;
 float low_volt_trip_x[NUM_POINTS_CURVE];
 float low_volt_trip_y[NUM_POINTS_CURVE];
+u8_t low_volt_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 int low_volt_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
 int low_volt_cess_curve_received = 0; // valie is 1 if received
@@ -140,12 +150,13 @@ float low_volt_cess_x[NUM_POINTS_CURVE];
 float low_volt_cess_y[NUM_POINTS_CURVE];
 // not used combined with low_volt_trip_curve_verify 
 //int low_volt_cess_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
-
+u8_t low_volt_cess_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 int high_volt_trip_curve_received = 0; // valie is 1 if received
 int high_volt_trip_points_count = 0;
 float high_volt_trip_x[NUM_POINTS_CURVE];
 float high_volt_trip_y[NUM_POINTS_CURVE];
+u8_t high_volt_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 int high_volt_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
 int high_volt_cess_curve_received = 0; // valie is 1 if received
@@ -154,18 +165,20 @@ float high_volt_cess_x[NUM_POINTS_CURVE];
 float high_volt_cess_y[NUM_POINTS_CURVE];
 // not used combined with low_volt_trip_curve_verify 
 //int high_volt_cess_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
-
+u8_t high_volt_cess_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 int low_freq_trip_curve_received = 0; // valie is 1 if received
 int low_freq_trip_points_count = 0;
 float low_freq_trip_x[NUM_POINTS_CURVE];
 float low_freq_trip_y[NUM_POINTS_CURVE];
+u8_t low_freq_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 int low_freq_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
 int high_freq_trip_curve_received = 0; // valie is 1 if received
 int high_freq_trip_points_count = 0;
 float high_freq_trip_x[NUM_POINTS_CURVE];
 float high_freq_trip_y[NUM_POINTS_CURVE];
+u8_t high_freq_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 int high_freq_trip_curve_verify = 0; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
 // 704 SF
@@ -595,17 +608,17 @@ void write_curve_data(int curve_type)
 
     if (curve_type == SL_XSD_CURVE_TYPE_VOLT_WATT)
     {
-        x_pts = &volt_watt_x[0];
-        y_pts = &volt_watt_y[0];
-        pts_count = &volt_watt_points_count;
-        curve_received = &volt_watt_curve_received;
+        x_pts = &volt_watt_x[volt_watt_set_curve_index][0];
+        y_pts = &volt_watt_y[volt_watt_set_curve_index][0];
+        pts_count = &volt_watt_points_count[volt_watt_set_curve_index];
+        curve_received = &volt_watt_curve_received[volt_watt_set_curve_index];
     }
     else if (curve_type == SL_XSD_CURVE_TYPE_VOLT_VAR)
     {
-        x_pts = &volt_var_x[0];
-        y_pts = &volt_var_y[0];
-        pts_count = &volt_var_points_count;
-        curve_received = &volt_var_curve_received;
+        x_pts = &volt_var_x[volt_var_set_curve_index][0];
+        y_pts = &volt_var_y[volt_var_set_curve_index][0];
+        pts_count = &volt_var_points_count[volt_var_set_curve_index];
+        curve_received = &volt_var_curve_received[volt_var_set_curve_index];
     }
     else if (curve_type == SL_XSD_CURVE_TYPE_WATT_VAR)
     {
@@ -679,8 +692,8 @@ void write_default_dercontrol_step3()
     ss_tx_buf[3] = 0x00;
     ss_tx_buf[4] = 3;
     ss_tx_buf[5] = 0x00;
-    ss_tx_buf[6] = 12;
-    ss_tx_buf[7] = 24; // byte count
+    ss_tx_buf[6] = 8; //12;
+    ss_tx_buf[7] = 16; //24; // byte count
     if (ESVHi_source == 1)  
     {
         tmp_u32 = (uint32_t) (ESVHi / 100);  // div by 100 since the 2030.5 messages have it specified after multiplication by 100
@@ -700,31 +713,52 @@ void write_default_dercontrol_step3()
         tmp_u32 = (uint32_t) (tmp_u32/pow(10, v_sf_703)); 
         tmp_u32 = tmp_u32 / 100; // expects value as 1.00 for 100, 1.05 for 105
     }
+    else 
+    {
+        // it is zero ;what ever is read from obcm is stored in ESVLo
+        tmp_u32 = (uint32_t) (ESVLo);
+    }
     ss_tx_buf[10] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
     ss_tx_buf[11] = (unsigned char)(tmp_u32 & 0xFF);
-    tmp_u32 = (uint32_t) (ESHzHi/pow(10, hz_sf_703)); 
     if (ESHzHi_source == 1) 
     {
+        tmp_u32 = (uint32_t) (ESHzHi/pow(10, hz_sf_703)); 
         tmp_u32 = (uint32_t) (tmp_u32 / 100);  // div by 100 since the 2030.5 messages have it specified after multiplication by 100
+    }
+    else 
+    {
+        // it is zero ;what ever is read from obcm is stored in ESVHi
+        tmp_u32 = (uint32_t) (ESHzHi);
     }
     ss_tx_buf[12] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
     ss_tx_buf[13] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
     ss_tx_buf[14] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
     ss_tx_buf[15] = (unsigned char)(tmp_u32 & 0xFF);
-    tmp_u32 = (uint32_t) (ESHzLo/pow(10, hz_sf_703)); 
     if (ESHzLo_source == 1) 
     {
+        tmp_u32 = (uint32_t) (ESHzLo/pow(10, hz_sf_703)); 
         tmp_u32 = (uint32_t) (tmp_u32 / 100);  // div by 100 since the 2030.5 messages have it specified after multiplication by 100
+    }
+    else 
+    {
+        // it is zero ;what ever is read from obcm is stored in ESVHi
+        tmp_u32 = (uint32_t) (ESHzLo);
     }
     ss_tx_buf[16] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
     ss_tx_buf[17] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
     ss_tx_buf[18] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
     ss_tx_buf[19] = (unsigned char)(tmp_u32 & 0xFF);
-    tmp_u32 = (uint32_t) (ESDlyTms); 
     if (ESDlyTms_source == 1) 
     {
+        tmp_u32 = (uint32_t) (ESDlyTms); 
         tmp_u32 = (uint32_t) (tmp_u32 / 100);  // div by 100 since the 2030.5 messages have it specified after multiplication by 100
     }
+    else 
+    {
+        // it is zero ;what ever is read from obcm is stored in ESVHi
+        tmp_u32 = (uint32_t) (ESDlyTms);
+    }
+
     ss_tx_buf[20] = (unsigned char)((tmp_u32 & 0xFF000000) >> 24);
     ss_tx_buf[21] = (unsigned char)((tmp_u32 & 0x00FF0000) >> 16);
     ss_tx_buf[22] = (unsigned char)((tmp_u32 & 0x0000FF00) >> 8);
@@ -796,6 +830,8 @@ void write_wset_pct_704_der()
     ss_tx_buf[7] = 2; // byte count 
     //tmpi = (int)( wset_pct_704/pow(10, wsetpct_sf_704) ); // Wsetpct
     tmpi = (int)( wset_pct_704 ); // Wsetpct
+    fprintf(stdout, "$$$$ => writing wsetpct on CAN = %d \n", wset_pct_704);
+
     ss_tx_buf[8] = ( char) (tmpi >> 8);
     ss_tx_buf[9] = (char) (tmpi);
 
@@ -881,7 +917,7 @@ void write_params1_curve_705_step3()
     ss_tx_buf[6] = 4;
     ss_tx_buf[7] = 8; // byte count
     ss_tx_buf[8] = 0x00; // num pts
-    ss_tx_buf[9] = (char)volt_var_points_count;
+    ss_tx_buf[9] = (char)volt_var_points_count[volt_var_set_curve_index];
     ss_tx_buf[10] = 0x00; // DeptRef
     ss_tx_buf[11] = 0x03; 
     ss_tx_buf[12] = 0x00; // pri
@@ -929,19 +965,19 @@ void write_volt_var_curve_705_step3()
     ss_tx_buf[3] = 0x00;
     ss_tx_buf[4] = 85;
     ss_tx_buf[5] = 0x00;
-    ss_tx_buf[6] = (unsigned char) 2*volt_var_points_count;
-    ss_tx_buf[7] = 2*volt_var_points_count * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
+    ss_tx_buf[6] = (unsigned char) 2*volt_var_points_count[volt_var_set_curve_index];
+    ss_tx_buf[7] = 2*volt_var_points_count[volt_var_set_curve_index] * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
 
-    for (ii=0; ii < volt_var_points_count; ii++) 
+    for (ii=0; ii < volt_var_points_count[volt_var_set_curve_index]; ii++) 
     {
-        tmp_u32 = (uint32_t) (volt_var_x[ii] / pow(10, v_sf_705));
+        tmp_u32 = (uint32_t) (volt_var_x[volt_var_set_curve_index][ii] / pow(10, v_sf_705));
         ss_tx_buf[8+4*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
         ss_tx_buf[8+4*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
-        tmp_i32 = (int32_t) (volt_var_y[ii] / pow(10, deptref_sf_705));
+        tmp_i32 = (int32_t) (volt_var_y[volt_var_set_curve_index][ii] / pow(10, deptref_sf_705));
         ss_tx_buf[8+4*ii+2] = (unsigned char)((tmp_i32 & 0xFF00) >> 8);
         ss_tx_buf[8+4*ii+3] = (unsigned char)(tmp_i32 & 0xFF) ;
     }
-    curr_ss_tx_len = 2* volt_var_points_count *2 + 8;
+    curr_ss_tx_len = 2* volt_var_points_count[volt_var_set_curve_index] *2 + 8;
     read_cmd = READ_NONE;
 }
 
@@ -987,7 +1023,7 @@ void process_verify_resp_volt_var_curve_705_step3()
         // 0 => in progress
         // 1 => completed : success
         // 2 => failed 
-        volt_var_curve_verify = (int) ss_rx_buf[3];
+        volt_var_curve_verify[volt_var_set_curve_index] = (int) ss_rx_buf[3];
         // TODO: Action to take when volt_var_curve_verify == failed
         // TODO: if value is 1, write SSP_3_WRITE_705_CURVE_ENABLE  to top of queue
     }
@@ -1012,7 +1048,7 @@ void write_enable_volt_var_curve_705_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    if (volt_var_curve_verify == 1)
+    if (volt_var_curve_verify[volt_var_set_curve_index] == 1)
     {
         ss_tx_buf[9] = 1; // enable set to 1
     }
@@ -1083,7 +1119,7 @@ void write_params_curve_706_step3()
     ss_tx_buf[6] = 4;
     ss_tx_buf[7] = 8; // byte count
     ss_tx_buf[8] = 0x00; // num pts
-    ss_tx_buf[9] = (char)volt_watt_points_count;
+    ss_tx_buf[9] = (char)volt_watt_points_count[volt_watt_set_curve_index];
     ss_tx_buf[10] = 0x00; // DeptRef
     ss_tx_buf[11] = 0x00; 
     ss_tx_buf[12] = 0x00; // RspTms " default: 100" INCLUSIVE OF factor (-1)
@@ -1106,19 +1142,19 @@ void write_volt_watt_curve_706_step3()
     ss_tx_buf[3] = 0x00;
     ss_tx_buf[4] = 70;
     ss_tx_buf[5] = 0x00;
-    ss_tx_buf[6] = (unsigned char) 2*volt_watt_points_count;
-    ss_tx_buf[7] = 2*volt_watt_points_count * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
+    ss_tx_buf[6] = (unsigned char) 2*volt_watt_points_count[volt_watt_set_curve_index];
+    ss_tx_buf[7] = 2*volt_watt_points_count[volt_watt_set_curve_index] * 2; // byte count = num pts (x,y) * 2 bytes per x or y point
 
-    for (ii=0; ii < volt_watt_points_count; ii++) 
+    for (ii=0; ii < volt_watt_points_count[volt_watt_set_curve_index]; ii++) 
     {
-        tmp_u32 = (uint32_t) (volt_watt_x[ii] / pow(10, v_sf_706));
+        tmp_u32 = (uint32_t) (volt_watt_x[volt_watt_set_curve_index][ii] / pow(10, v_sf_706));
         ss_tx_buf[8+4*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
         ss_tx_buf[8+4*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
-        tmp_i32 = (int32_t) (volt_watt_y[ii] / pow(10, deptref_sf_706));
+        tmp_i32 = (int32_t) (volt_watt_y[volt_watt_set_curve_index][ii] / pow(10, deptref_sf_706));
         ss_tx_buf[8+4*ii+2] = (unsigned char)((tmp_i32 & 0xFF00) >> 8);
         ss_tx_buf[8+4*ii+3] = (unsigned char)(tmp_i32 & 0xFF) ;
     }
-    curr_ss_tx_len = 2* volt_watt_points_count *2 + 8;
+    curr_ss_tx_len = 2* volt_watt_points_count[volt_watt_set_curve_index] *2 + 8;
     read_cmd = READ_NONE;
 }
 
@@ -1164,7 +1200,7 @@ void process_verify_resp_volt_watt_curve_706_step3()
         // 0 => in progress
         // 1 => completed : success
         // 2 => failed 
-        volt_watt_curve_verify = (int) ss_rx_buf[3];
+        volt_watt_curve_verify[volt_watt_set_curve_index] = (int) ss_rx_buf[3];
         // TODO: Action to take when volt_watt_curve_verify == failed
         // TODO: if value is 1, write SSP_3_WRITE_706_CURVE_ENABLE  to top of queue
     }
@@ -1189,7 +1225,7 @@ void write_enable_volt_watt_curve_706_step3()
     ss_tx_buf[6] = 1;
     ss_tx_buf[7] = 2; // byte count 
     ss_tx_buf[8] = 0x00;
-    if (volt_watt_curve_verify == 1) // verified response
+    if (volt_watt_curve_verify[volt_var_set_curve_index] == 1) // verified response
     {
         ss_tx_buf[9] = 1; // enable set to 1
     }
@@ -1276,6 +1312,7 @@ void write_low_volt_trip_curve_707_step3()
     for (ii=0; ii < low_volt_trip_points_count; ii++) 
     {
         tmp_u32 = (uint32_t) (low_volt_trip_y[ii] / pow(10, v_sf_707));
+        tmp_u32 = (uint32_t) (tmp_u32 / 100); // model expecting range from 0 to 1 mapped to 0 to 100%
         ss_tx_buf[8+6*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
         ss_tx_buf[8+6*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
         tmp_u32 = (uint32_t) (low_volt_trip_x[ii] / pow(10, tms_sf_707));
@@ -1308,6 +1345,7 @@ void write_low_volt_cess_curve_707_step3()
     for (ii=0; ii < low_volt_cess_points_count; ii++) 
     {
         tmp_u32 = (uint32_t) (low_volt_cess_y[ii] / pow(10, v_sf_707));
+        tmp_u32 = (uint32_t) (tmp_u32 / 100); // model expects values 0 to 1 mapped to 0 to 100%
         ss_tx_buf[10+6*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
         ss_tx_buf[10+6*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
         tmp_u32 = (uint32_t) (low_volt_cess_x[ii] / pow(10, tms_sf_707));
@@ -1474,6 +1512,7 @@ void write_high_volt_trip_curve_708_step3()
     for (ii=0; ii < high_volt_trip_points_count; ii++) 
     {
         tmp_u32 = (uint32_t) (high_volt_trip_y[ii] / pow(10, v_sf_708));
+        tmp_u32 = (uint32_t) (tmp_u32 / 100); // model expects values 0 to 1 mapped to 0 to 100%
         ss_tx_buf[8+6*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
         ss_tx_buf[8+6*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
         tmp_u32 = (uint32_t) (high_volt_trip_x[ii] / pow(10, tms_sf_708));
@@ -1505,6 +1544,7 @@ void write_high_volt_cess_curve_708_step3()
     for (ii=0; ii < high_volt_cess_points_count; ii++) 
     {
         tmp_u32 = (uint32_t) (high_volt_cess_y[ii] / pow(10, v_sf_708));
+        tmp_u32 = (uint32_t) (tmp_u32 / 100); // model expects values 0 to 1 mapped to 0 to 100%
         ss_tx_buf[10+6*ii] = (unsigned char)((tmp_u32 & 0xFF00) >> 8);
         ss_tx_buf[10+6*ii+1] = (unsigned char)(tmp_u32 & 0xFF) ;
         tmp_u32 = (uint32_t) (high_volt_cess_x[ii] / pow(10, tms_sf_708));
@@ -2606,6 +2646,7 @@ void process_recv_message_ssproto()
 
 void ss_init_task(int task_id)
 {
+    int ii;
     current_proto_task_id = task_id;
     switch (task_id) {
         case SSP_1_0_RECEIVED_DERSETTINGS:
@@ -2676,8 +2717,26 @@ void ss_init_task(int task_id)
             // do nothing
             break;
         case SSP_5_2_WRITE_703_ES:
-            write_es_status_default_dercontrol_step5();
-            start_ss_can_proto();
+            ii = high_freq_trip_curve_verify + low_freq_trip_curve_verify;
+            ii = ii + low_volt_trip_curve_verify + high_volt_trip_curve_verify;
+            ii = ii + volt_var_curve_verify[0] + volt_watt_curve_verify[0] + freq_droop_curve_verify;
+            fprintf(stdout, "HF trip = %d, LF trip = %d\n", high_freq_trip_curve_verify, low_freq_trip_curve_verify);
+            fprintf(stdout, "HV trip = %d, LV trip = %d\n", high_volt_trip_curve_verify, low_volt_trip_curve_verify);
+            fprintf(stdout, "volt var = %d, volt watt = %d, freq droop = %d\n" ,
+                volt_var_curve_verify[0], volt_watt_curve_verify[0], freq_droop_curve_verify);
+            fprintf(stdout, "------\nprevES = %d, ES = %d, sum ii = %d\n" ,prev_ES, ES, ii);
+            if (ii >= 7 )  //7) 
+            {
+                if (prev_ES != ES) 
+                {
+                    write_es_status_default_dercontrol_step5();
+                    start_ss_can_proto();
+                }
+            }
+            // else 
+            // {
+            //     enqueue(SSP_5_2_WRITE_703_ES);
+            // }
             break;
         case SSP_6_1_READ_701_REPORT_VALUE:
             read_params_model701();
@@ -2711,6 +2770,7 @@ void ss_init_task(int task_id)
             read_verify_resp_volt_var_curve_705_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 705 verify resp\n");
             break;
         case SSP_3_WRITE_705_CURVE_ENABLE:
             write_enable_volt_var_curve_705_step3();
@@ -2736,6 +2796,7 @@ void ss_init_task(int task_id)
             read_verify_resp_volt_watt_curve_706_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 706 verify resp\n");
             break;
         case SSP_3_WRITE_706_CURVE_ENABLE:
             write_enable_volt_watt_curve_706_step3();
@@ -2765,6 +2826,7 @@ void ss_init_task(int task_id)
             read_verify_resp_low_volt_trip_curve_707_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 707 verify resp\n");
             break;
         case SSP_3_WRITE_707_CURVE_ENABLE:
             write_enable_low_volt_trip_curve_707_step3();
@@ -2794,6 +2856,7 @@ void ss_init_task(int task_id)
             read_verify_resp_high_volt_trip_curve_708_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 708 verify resp\n");
             break;
         case SSP_3_WRITE_708_CURVE_ENABLE:
             write_enable_high_volt_trip_curve_708_step3();
@@ -2820,6 +2883,7 @@ void ss_init_task(int task_id)
             read_verify_resp_low_freq_trip_curve_709_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 709 verify resp\n");
             break;
         case SSP_3_WRITE_709_CURVE_ENABLE:
             write_enable_low_freq_trip_curve_709_step3();
@@ -2846,6 +2910,7 @@ void ss_init_task(int task_id)
             read_verify_resp_high_freq_trip_curve_710_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 710 verify resp\n");
             break;
         case SSP_3_WRITE_710_CURVE_ENABLE:
             write_enable_high_freq_trip_curve_710_step3();
@@ -2868,6 +2933,7 @@ void ss_init_task(int task_id)
             read_verify_resp_freq_droop_curve_711_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 711 verify resp\n");
             break;
         case SSP_3_WRITE_711_CURVE_ENABLE:
             write_enable_freq_droop_curve_711_step3();
@@ -2894,6 +2960,7 @@ void ss_init_task(int task_id)
             read_verify_resp_watt_var_curve_712_step3();
             start_ss_can_proto();
             verify_start_time = getCurrentTime();
+            fprintf(stdout, "xxxx====xxxx---> started curve 712 verify resp\n");
             break;
         case SSP_3_WRITE_712_CURVE_ENABLE:
             write_enable_watt_var_curve_712_step3();
@@ -2931,6 +2998,7 @@ int ss_completed_task(int task_id)
     int ret_val = 0;
     int ss_can_proto_state;
     int tmpi;
+    int ii;
     if (current_proto_task_id > 0)
     {
         switch (task_id)
@@ -3012,6 +3080,11 @@ int ss_completed_task(int task_id)
                     ret_val = 1;
                 }
             }
+            else 
+            {
+                // default derc  not received; will perform this step again when received
+                ret_val = 1;
+            }
             break;
         case SSP_4_1_WRITE_MUP_SETUP:
             ret_val = 1;
@@ -3066,6 +3139,17 @@ int ss_completed_task(int task_id)
                 ret_val = 1;
                 //enqueue(SSP_5_2_WRITE_703_ES);
             }
+            ii = high_freq_trip_curve_verify + low_freq_trip_curve_verify;
+            ii = ii + low_volt_trip_curve_verify + high_volt_trip_curve_verify;
+            ii = ii + volt_var_curve_verify[0] + volt_watt_curve_verify[0] + freq_droop_curve_verify;
+            if (ii >= 7 )  //7) 
+            {
+                if (prev_ES != ES)
+                {
+                    prev_ES = ES;
+                    evcc_es = ES;
+                }
+            } 
             break;
         case SSP_6_1_READ_701_REPORT_VALUE:
             ss_can_proto_state = get_current_state();
@@ -3112,26 +3196,29 @@ int ss_completed_task(int task_id)
             ss_can_proto_state = get_current_state();
             if (ss_can_proto_state == SSP_IDLE_STATE)
             {
-                if (volt_var_curve_verify == 1)
+                if (volt_var_curve_verify[volt_var_set_curve_index] == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
-                else if (volt_var_curve_verify == 2) // verify failied
+                else if (volt_var_curve_verify[volt_var_set_curve_index] == 2) // verify failied
                 {
                     ret_val = 1;
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 705\n");
                     }
                     else
                     {
@@ -3161,26 +3248,29 @@ int ss_completed_task(int task_id)
                     ss_can_proto_state = get_current_state();
             if (ss_can_proto_state == SSP_IDLE_STATE)
             {
-                if (volt_watt_curve_verify == 1)
+                if (volt_watt_curve_verify[volt_watt_set_curve_index] == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
-                else if (volt_watt_curve_verify == 2) // verify failied
+                else if (volt_watt_curve_verify[volt_watt_set_curve_index] == 2) // verify failied
                 {
                     ret_val = 1;
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 706\n");
                     }
                     else
                     {
@@ -3214,6 +3304,7 @@ int ss_completed_task(int task_id)
                 if (low_volt_trip_curve_verify == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
                 else if (low_volt_trip_curve_verify == 2) // verify failied
                 {
@@ -3221,17 +3312,19 @@ int ss_completed_task(int task_id)
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
-                    }
+                         fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 707\n");
+                   }
                     else
                     {
                         ret_val = 0;
@@ -3264,6 +3357,7 @@ int ss_completed_task(int task_id)
                 if (high_volt_trip_curve_verify == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
                 else if (high_volt_trip_curve_verify == 2) // verify failied
                 {
@@ -3271,16 +3365,18 @@ int ss_completed_task(int task_id)
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 708\n");
                     }
                     else
                     {
@@ -3314,6 +3410,7 @@ int ss_completed_task(int task_id)
                 if (low_freq_trip_curve_verify == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
                 else if (low_freq_trip_curve_verify == 2) // verify failied
                 {
@@ -3321,16 +3418,18 @@ int ss_completed_task(int task_id)
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 709\n");
                     }
                     else
                     {
@@ -3364,6 +3463,7 @@ int ss_completed_task(int task_id)
                 if (high_freq_trip_curve_verify == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
                 else if (high_freq_trip_curve_verify == 2) // verify failied
                 {
@@ -3371,16 +3471,18 @@ int ss_completed_task(int task_id)
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 710\n");
                     }
                     else
                     {
@@ -3414,6 +3516,7 @@ int ss_completed_task(int task_id)
                 if (freq_droop_curve_verify == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
                 else if (freq_droop_curve_verify == 2) // verify failied
                 {
@@ -3421,16 +3524,18 @@ int ss_completed_task(int task_id)
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 711\n");
                     }
                     else
                     {
@@ -3464,6 +3569,7 @@ int ss_completed_task(int task_id)
                 if (watt_var_curve_verify == 1)
                 {
                     ret_val = 1;
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 } 
                 else if (watt_var_curve_verify == 2) // verify failied
                 {
@@ -3471,16 +3577,18 @@ int ss_completed_task(int task_id)
                     // there is no need to write the enable function, so simple remove it from queue
                     tmpi = dequeue_2();
                     // send INVALID CURVE status response to SEP2 client
+                    topqueue(SSP_5_2_WRITE_703_ES);
                 }
                 else
                 {
                     verify_end_time = getCurrentTime();
-                    if ( (verify_end_time - verify_start_time) > 2) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
+                    if ( (verify_end_time - verify_start_time) > OBCM_VERIFY_TIMEOUT) // ADDING 1 sec in addition to spec provided by DiamondElectric since I am doing init and verify in successive steps
                     {
                         ret_val = 1;
                         // there is no need to write the enable function, so simple remove it from queue
                         tmpi = dequeue_2();
                         // send INVALID CURVE status response to SEP2 client
+                        fprintf(stdout, "xxxx======xxxxx===> Timed out waiting to verify curve 712\n");
                     }
                     else
                     {

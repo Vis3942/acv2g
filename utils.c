@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <stdarg.h>
+#include <string.h>
 
 #include "utils.h"
 
@@ -13,6 +14,11 @@ int console_logf_init = 0;
 int number_log_messages = 0;
 int number_data_messages = 0;
 char * can_data_filename = "/tmp/can_data.csv";
+int proto_timer_seconds = 5;
+int32_t evcc_es=0; // 1 => true 0 => false
+int override_power_status = -1;
+int override_max_forward_power = -1;
+int override_charge_power_now = -1;
 
 int console_log(char *message,...)
 {
@@ -141,4 +147,87 @@ void write_can_data_csv(int id, char*data)
     fclose(fpt);
   }
 
+}
+
+int startsWith(const char *a, const char *b)
+{
+   if(strncmp(a, b, strlen(b)) == 0) return 1;
+   return 0;
+}
+
+#define DELIM_PARAM "="
+void read_parameters_from_file(char * param_file_name)
+{
+  // default values if not specified in file
+  proto_timer_seconds = 5;
+  FILE *file = fopen (param_file_name, "r");
+  size_t tmpst;
+  if (file != NULL)
+  {
+    char line[1024];
+    while(fgets(line, sizeof(line), file) != NULL)
+    {
+      char *cfline;
+      cfline = strstr((char *)line,DELIM_PARAM);
+      cfline = cfline + strlen(DELIM_PARAM);
+      if (startsWith(line, "proto_timer_seconds"))
+      {
+        tmpst = strlen(cfline);
+        cfline[tmpst] = '\0';
+        proto_timer_seconds = atoi(cfline);
+      }
+      else if (startsWith(line, "override_power_status"))
+      {
+        tmpst = strlen(cfline);
+        cfline[tmpst] = '\0';
+        override_power_status = atoi(cfline);
+      }
+      else if (startsWith(line, "override_max_forward_power"))
+      {
+        tmpst = strlen(cfline);
+        cfline[tmpst] = '\0';
+        override_max_forward_power = atoi(cfline);
+      }
+      else if (startsWith(line, "override_charge_power_now"))
+      {
+        tmpst = strlen(cfline);
+        cfline[tmpst] = '\0';
+        override_charge_power_now = atoi(cfline);
+      }
+
+    } // End while
+    fclose(file);
+    // debug
+    fprintf(stdout, "Params from %s\n", param_file_name);
+    fprintf(stdout, "proto timer secs = %d \n", 
+        proto_timer_seconds);
+    fprintf(stdout, "override power status = %d \n", 
+        override_power_status);
+    fprintf(stdout, "override max forward power = %d \n",
+        override_max_forward_power);
+    fprintf(stdout, "override charge power now = %d \n",
+        override_charge_power_now); 
+  } 
+  else 
+  {
+    fprintf(stdout, "Unable to locate %s file. Using default values.\n", param_file_name);
+  } // End if file
+}
+
+void charArrayToHexString(const char *input, size_t length, char *output, size_t output_max_len) {
+    static const char hexDigits[] = "0123456789ABCDEF";
+
+    // Ensure the output buffer is large enough
+    if (output == NULL || length * 2 + 1 > output_max_len) { 
+        fprintf(stderr, "Output buffer is too small or NULL.\n");
+        return;
+    }
+
+    for (size_t i = 0; i < length; i++) {
+        unsigned char byte = (unsigned char)input[i];
+        output[i * 2]     = hexDigits[(byte >> 4) & 0x0F]; // High nibble
+        output[i * 2 + 1] = hexDigits[byte & 0x0F];        // Low nibble
+    }
+
+    output[length * 2] = '\0'; // Null-terminate the hex string
 }

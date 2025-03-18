@@ -80,7 +80,6 @@ int32_t obc_max_rvr_pwr_w;
 int32_t obc_esstat;
 int32_t obc_pilotfreq_type;
 int32_t obc_dcca;
-int32_t evcc_es; // 1 => true 0 => false
 // need for SCE: END
 
 int32_t charge_percent; // 0=> do not charge/ di0scharge, -100 charge at 100%, -25 charge at 25%, 100 discharge at 100%
@@ -127,7 +126,6 @@ int test_loc_val_evcc = 0;
 
 int reverse_power_flow_flag;
 int reverse_power_flow_percent;
-int proto_timer_seconds = 5;
 int test_timer_seconds = 5;
 int test_timerfd;
 int proto_timerfd; // for sunspec profile proto impl
@@ -367,7 +365,8 @@ void can_message (int id, char *data_recv) {
 
   if (send_to_hcp == 1) 
   {
-    evcc_es = (int32_t)ES; // usock updates ES, while the CAN message uses evcc_es, so sync both these variable before sending
+    // evcc_es is updated when there is a change of state and is written to the OBCM sunspec model 703
+    //evcc_es = (int32_t)ES; // usock updates ES, while the CAN message uses evcc_es, so sync both these variable before sending
     if (server_status == 1) 
     {
       data[0] = (1 << 4);
@@ -805,8 +804,9 @@ void parse_options (int argc, char **argv) {
     // }
     if (test_ss_curve_type == 0) 
     {
-      volt_var_points_count = 4;
-      volt_var_curve_received = 1;
+      volt_var_set_curve_index = 0;
+      volt_var_points_count[volt_var_set_curve_index] = 4;
+      volt_var_curve_received[volt_var_set_curve_index] = 1;
       setVRef = (short)208;
       v_sf_705 = (short) setVRef;
       vamax_702 = (short)660;
@@ -819,14 +819,14 @@ void parse_options (int argc, char **argv) {
       // volt_var_x[3] = -0.30*vamax_702;
       // volt_var_y[3] = 0.30*vamax_702;
       // test values based on 1547 curve (provided by Yuki)
-      volt_var_y[0] = 0.920;
-      volt_var_x[0] = 0.30;
-      volt_var_y[1] = 0.97;
-      volt_var_x[1] = 0;
-      volt_var_y[2] = 1.033;
-      volt_var_x[2] = 0;
-      volt_var_y[3] = 1.07;
-      volt_var_x[3] = -0.30;
+      volt_var_y[0][0] = 0.920;
+      volt_var_x[0][0] = 0.30;
+      volt_var_y[0][1] = 0.97;
+      volt_var_x[0][1] = 0;
+      volt_var_y[0][2] = 1.033;
+      volt_var_x[0][2] = 0;
+      volt_var_y[0][3] = 1.07;
+      volt_var_x[0][3] = -0.30;
 
       enqueue(SSP_2_2_READ_702_CONFIG_INFO);
       enqueue(SSP_3_READ_705_SF);
@@ -839,12 +839,14 @@ void parse_options (int argc, char **argv) {
     }
     else if (test_ss_curve_type == 1) 
     {
-      volt_watt_points_count = 2;
-      volt_watt_curve_received = 1;
-      volt_watt_y[0] = 1.0675;
-      volt_watt_x[0] = 1.0;
-      volt_watt_y[1] = 1.1;
-      volt_watt_x[1] = 0;
+      volt_watt_current_curve_index = 0;
+      volt_watt_set_curve_index = 0;
+      volt_watt_points_count[0] = 2;
+      volt_watt_curve_received[0] = 1;
+      volt_watt_y[0][0] = 1.0675;
+      volt_watt_x[0][0] = 1.0;
+      volt_watt_y[0][1] = 1.1;
+      volt_watt_x[0][1] = 0;
 
       enqueue(SSP_3_READ_706_SF);
       enqueue(SSP_3_WRITE_706_PARAMS);
@@ -1023,6 +1025,7 @@ int main (int argc, char **argv) {
   version ();
   init_data();
   init_can_data_csv();
+  read_parameters_from_file("can2sep2_settings.txt");
   // options (argc-1, argv+1);
   parse_options(argc, argv);
   signal_init ();

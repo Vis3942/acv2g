@@ -15,6 +15,13 @@
 #define MANUFACTURER_LEN 10
 #define MAX_NUM_DATA_MESSAGES 500000
 
+extern int proto_timer_seconds;
+extern int32_t evcc_es; // 1 => true 0 => false
+extern int override_power_status;
+extern int override_max_forward_power;
+extern int override_charge_power_now;
+
+
 int console_log(char *message,...);
 void version();
 uint32_t convertBytesToUint32BigEndian(unsigned char *bytes, int start_idx);
@@ -23,6 +30,8 @@ void displayTime();
 int bytesToInt(char* bytes, int start_idx);
 void init_can_data_csv();
 void write_can_data_csv(int id, char*data);
+void read_parameters_from_file(char * param_file_name);
+void charArrayToHexString(const char *input, size_t length, char *output, size_t output_max_len);
 
 #endif // UTILS_H
 

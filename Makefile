@@ -7,14 +7,16 @@
 # export  path (see commands below)
 #ensure you set up export before using this file
 #export PATH=$PATH:~/Documents/EPRI/spin/mevse_toolchain/arm-2009q1/bin
+# new path for the toolchain Feb2025
+#export PATH=$PATH:/media/viswanath/ExtraDrive1/toolchain/mevse_toolchain/arm-2009q1/bin
 
 CROSS=arm-none-linux-gnueabi-
 CC := $(CROSS)gcc
 #CFLAGS := -v -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN
-CFLAGS := -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN 
+CFLAGS := -Wall -Wno-missing-braces -DPF_CAN=29 -DAF_CAN=PF_CAN -std=gnu99
 STRIP := $(CROSS)strip
 TARGET := can2sep2
-OBJFILES := loc_can.o usock.o ss_proto_can.o ss_proto.o task_queue.o usock_proto.o usock_utils.o utils.o usock_server.o can2sep2.o 
+OBJFILES := loc_can.o usock.o ss_proto_can.o ss_proto.o task_queue.o usock_proto.o usock_utils.o utils.o usock_server.o can2sep2.o utils_event_arr.o
 LDFLAGS := -lm -lrt
 
 all: $(TARGET)

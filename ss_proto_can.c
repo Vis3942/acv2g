@@ -181,7 +181,8 @@ void send_ss_can_message()
   }
   can_transmit_millis = get_now_time();
   can_transmit (SSP_CAN_TX_ID, (char *)can_tx_buf, 8);
-  
+  write_can_data_csv((int)SSP_CAN_TX_ID, (char *)can_tx_buf);
+ 
 }
 
 /*

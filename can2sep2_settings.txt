@@ -1,0 +1,4 @@
+proto_timer_seconds=4
+override_power_status=1
+override_max_forward_power=6600
+override_charge_power_now=2000

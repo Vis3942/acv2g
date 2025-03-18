@@ -15,6 +15,7 @@
 #include "usock_server.h"
 #include "task_queue.h"
 #include "usock_utils.h"
+#include "utils_event_arr.h"
 
 #define DEFAULT_MMR_NUM_MR_GROUPS     (SL_METER_MIRROR_MAX_MR_GROUPS)
 #define DEFAULT_NUM_MMRS (4)
@@ -115,6 +116,7 @@ void get_default_der_data()
 {
     sl_der_default_derc_t def_derc = {0};
     int len = sizeof(def_derc);
+    int tmpi;
     memcpy(&def_derc, recv_buf, len);
     if (def_derc.dercBase.opModEnergizeExists)
     {
@@ -160,6 +162,11 @@ void get_default_der_data()
         ESRmpTms_source = 1;
         fprintf(stdout, "setESRampTms. val = %u.\n", ESRmpTms);
     }
+    tmpi = get_ss_proto_task_id();
+    if ( (default_derc_received == -1) && (tmpi >= SSP_3_RECEIVED_DEFAULT_DERCONTROL) ) 
+    {
+        topqueue(SSP_3_RECEIVED_DEFAULT_DERCONTROL);
+    }
     default_derc_received = 1;
     // debug
     fprintf(stdout, "default derc recvd. set to 1.\n");
@@ -184,36 +191,418 @@ void get_default_der_data()
 
         sts_init = true;
     }
-
 }
 
-void get_derc_ind_data() 
+void eventChangeNotification()
 {
-    sl_der_client_derc_ind derc_ind = {0};
-    int len = sizeof(derc_ind);
-    memcpy(&derc_ind, recv_buf, len);
-    if (derc_ind.derc.dercBase.opModFixedWExists)
+    int tmp_wset_pct_704=0;
+    printEventList();
+    if (fixedWEventExists() == 1) 
     {
-        wset_pct_704 = (int)(derc_ind.derc.dercBase.opModFixedW/100);
+        // then computeActivePowerPercent
+        fprintf(stdout, "$$$$%%%%% => Active Power event exists, compute active power percent\n");
+        tmp_wset_pct_704 = ComputeActivePowerPercent();
+        fprintf(stdout, "$$$$%%%%% => computed active power percent %d, actual wset_pct = %d \n", tmp_wset_pct_704, wset_pct_704);
+        if (tmp_wset_pct_704 != wset_pct_704)
+        {
+            wset_pct_704 = tmp_wset_pct_704;    //(int)(derc_ind.derc.dercBase.opModFixedW/100);
+            if (wset_pct_704 != 0)
+            {
+                wset_pct_ena_704 = 1; // enable
+            }
+            else 
+            {
+                wset_pct_ena_704 = 0;
+            }
+            enqueue_2(SSP_DER_WRITE_704_PARAMS);    
+            enqueue_2(SSP_DER_WRITE_704_ENABLE);
+        }
     }
     else 
     {
-        wset_pct_704 = 0;
+        if (wset_pct_704 != 0)
+        {
+            fprintf(stdout, "$$$$%%%%% => No Active Power event current wset_pct = %d. set wset_pct to 0 and disable\n", wset_pct_704);
+            wset_pct_704 = 0;
+            wset_pct_ena_704 = 0;
+            enqueue_2(SSP_DER_WRITE_704_PARAMS);    
+            enqueue_2(SSP_DER_WRITE_704_ENABLE);
+        }
+    } 
+}
+
+int get_curve_type_for_derc_mrid(u8_t * derc_mrid_for_curve, u16_t curveType)
+{
+    int ii;
+    // return -1 if not found in any of curves
+    // else return the assoc curve type
+
+    switch (curveType)
+    {
+    case SL_XSD_CURVE_TYPE_VOLT_WATT:
+        ii = 0;
+        while (ii < volt_watt_current_curve_index)
+        {
+            if (memcmp( derc_mrid_for_curve, volt_watt_curve_derc_mrid[ii], SL_XSD_MRID_LEN) == 0)
+            {
+                volt_watt_set_curve_index = ii;
+                return SL_XSD_CURVE_TYPE_VOLT_WATT;
+            }
+            ii++;
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_VOLT_VAR:
+        ii = 0;
+        while (ii < volt_var_current_curve_index)
+        {
+            //debug delete after that
+            fprintf(stdout, "checking volt var curve get curve type for mrid ii=%d, curr curve idx %d \n", 
+                ii, volt_var_current_curve_index);
+            if (memcmp( derc_mrid_for_curve, volt_var_curve_derc_mrid[ii], SL_XSD_MRID_LEN) == 0)
+            {
+                fprintf(stdout, "found curve at index %d \n", ii);
+                volt_var_set_curve_index = ii;
+                return SL_XSD_CURVE_TYPE_VOLT_VAR;
+            }
+            ii++;
+        }
+        break;
+    
+    case SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP:
+        if (memcmp( derc_mrid_for_curve, low_volt_trip_curve_derc_mrid, SL_XSD_MRID_LEN) == 0)
+        {
+            return SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP;
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_LVRT_MOM_CESS:
+        if (memcmp( derc_mrid_for_curve, low_volt_cess_curve_derc_mrid, SL_XSD_MRID_LEN) == 0)
+        {
+            return SL_XSD_CURVE_TYPE_LVRT_MOM_CESS;
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP:
+        if (memcmp( derc_mrid_for_curve, high_volt_trip_curve_derc_mrid, SL_XSD_MRID_LEN) == 0)
+        {
+            return SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP;
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_HVRT_MOM_CESS:
+        if (memcmp( derc_mrid_for_curve, high_volt_cess_curve_derc_mrid, SL_XSD_MRID_LEN) == 0)
+        {
+            return SL_XSD_CURVE_TYPE_HVRT_MOM_CESS;
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP:
+        if (memcmp( derc_mrid_for_curve, low_freq_trip_curve_derc_mrid, SL_XSD_MRID_LEN) == 0)
+        {
+            return SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP;
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP:
+        if (memcmp( derc_mrid_for_curve, high_freq_trip_curve_derc_mrid, SL_XSD_MRID_LEN) == 0)
+        {
+            return SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP;
+        }
+        break;
+
+    default:
+        break;
     }
 
+    return -1;
+}
+
+void update_assoc_curve_event_mrid(u8_t * curve_assoc_derc_mrId, int curveType) 
+{
+    int ii;
+    // return -1 if not found in any of curves
+    // else return the assoc curve type
+
+    switch (curveType)
+    {
+    case SL_XSD_CURVE_TYPE_VOLT_WATT:
+        if (volt_watt_current_curve_index >= MAX_SUPERSEDE_EVENTS)
+        {
+            fprintf(stdout, "ignoring volt-watt DERC event. Buffer full\n");
+        }
+        else 
+        {
+            fprintf(stdout, "volt watt curve derc event received before curve data\n");
+            ii = volt_watt_current_curve_index;
+            volt_watt_current_curve_index++;
+            memcpy( volt_watt_curve_derc_mrid[ii], curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        }
+        break;
+
+    case SL_XSD_CURVE_TYPE_VOLT_VAR:
+        if (volt_watt_current_curve_index >= MAX_SUPERSEDE_EVENTS)
+        {
+            fprintf(stdout, "ignoring volt-var DERC event. Buffer full\n");
+        }
+        else 
+        {
+            fprintf(stdout, "volt var curve derc event received before curve data\n");
+            ii = volt_var_current_curve_index;
+            volt_var_current_curve_index++;
+            memcpy( volt_var_curve_derc_mrid[ii], curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        }
+        break;
+    
+    case SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP:
+            fprintf(stdout, "low volt must trip curve derc event received before curve data\n");
+            memcpy( low_volt_trip_curve_derc_mrid, curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        break;
+
+    case SL_XSD_CURVE_TYPE_LVRT_MOM_CESS:
+            fprintf(stdout, "low volt mom cess curve derc event received before curve data\n");
+            memcpy( low_volt_cess_curve_derc_mrid, curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        break;
+
+    case SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP:
+            fprintf(stdout, "high volt must trip curve derc event received before curve data\n");
+            memcpy( high_volt_trip_curve_derc_mrid, curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        break;
+
+    case SL_XSD_CURVE_TYPE_HVRT_MOM_CESS:
+            fprintf(stdout, "high volt mom cess curve derc event received before curve data\n");
+            memcpy( high_volt_cess_curve_derc_mrid, curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        break;
+
+    case SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP:
+            fprintf(stdout, "low freq must trip curve derc event received before curve data\n");
+            memcpy( low_freq_trip_curve_derc_mrid, curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        break;
+
+    case SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP:
+            fprintf(stdout, "high freq must trip curve derc event received before curve data\n");
+            memcpy( high_freq_trip_curve_derc_mrid, curve_assoc_derc_mrId, SL_XSD_MRID_LEN ); 
+        break;
+
+    default:
+        break;
+    }
+}
+
+
+
+void get_derc_ind_data() 
+{
+    int sts, sts2;
+    uint8_t tmp_evt_type = 0;
+    int32_t tmp_val = 0;
+    sl_der_client_derc_ind derc_ind = {0};
+    int len = sizeof(derc_ind);
+    char mrid_text[256];  
+    memcpy(&derc_ind, recv_buf, len);
+
+
+    charArrayToHexString(derc_ind.derc.randEvent.event.mrId, SL_XSD_MRID_LEN, mrid_text, 256);
+    // supported events
+    if ( (!derc_ind.derc.dercBase.opModFixedWExists) &&
+         (!derc_ind.derc.dercBase.opModMaxLimWExists) &&
+         (!derc_ind.derc.dercBase.opModTargetWExists) 
+    )
+    {
+        // is derc assoc with a curve; 
+        // identify if based on dercMrid assoc with curve
+        sts = 0;
+        if (derc_ind.derc.dercBase.opModVoltWattCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_VOLT_WATT;
+        }
+        else if (derc_ind.derc.dercBase.opModVoltVarCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_VOLT_VAR;
+        }
+        else if (derc_ind.derc.dercBase.opModLVRTMustTripCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP;
+        }
+        else if (derc_ind.derc.dercBase.opModLVRTMomentaryCessationCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_LVRT_MOM_CESS;
+        }
+        else if (derc_ind.derc.dercBase.opModHVRTMustTripCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP;
+        }
+        else if (derc_ind.derc.dercBase.opModHVRTMomentaryCessationCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_HVRT_MOM_CESS;
+        }
+        else if (derc_ind.derc.dercBase.opModLFRTMustTripCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP;
+        }
+        else if (derc_ind.derc.dercBase.opModHFRTMustTripCurveExists)
+        {
+            sts = SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP;
+        }
+        else
+        {
+            sts = 0;
+        }
+
+        if (sts > 0) 
+        {
+            fprintf(stdout, "----->>>> recvd: mrid [%s] eventStatus = %d of curve type [%d]\n", 
+                mrid_text, derc_ind.activeInfo.eventRespStatus, sts);
+
+            if (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_STARTED)
+            {
+                sts2 = get_curve_type_for_derc_mrid(derc_ind.derc.randEvent.event.mrId, sts);
+                fprintf(stdout, "sts2 = %d \n", sts2);
+                if (sts2 > -1) 
+                {
+                    if (sts2 == SL_XSD_CURVE_TYPE_VOLT_WATT)
+                    {
+                        fprintf(stdout, "!!!!xxxx!!!! Sending curve type %d info to OBCM at index %d\n",
+                            sts2, volt_watt_set_curve_index);
+                    }
+                    else if (sts2 == SL_XSD_CURVE_TYPE_VOLT_WATT)
+                    {
+                        fprintf(stdout, "!!!!xxxx!!!! Sending curve type %d info to OBCM at index %d\n",
+                            sts2, volt_var_set_curve_index);
+                    }
+                    else 
+                    {
+                        fprintf(stdout, "!!!!xxxx!!!! Sending curve type %d info to OBCM\n", sts2);
+                    }
+                    setup_curve_to_obcm(sts2);
+                }
+                else 
+                {
+                    update_assoc_curve_event_mrid(derc_ind.derc.randEvent.event.mrId, sts);
+                }
+            }
+            else if (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_MSG_RXED)
+            {
+                // do nothing wait for event to start
+            }
+            else if (
+                // ignore opt-out and superseded
+                (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_COMPLETED) ||
+                //(derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_OPT_OUT) ||
+                (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_CANCELED)
+                //(derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_SUPERSEDED)
+            )
+            {
+                sts2 = get_curve_type_for_derc_mrid(derc_ind.derc.randEvent.event.mrId, sts);
+                if (sts2 > -1) 
+                {
+                    if (sts2 == SL_XSD_CURVE_TYPE_VOLT_WATT) 
+                    {
+                        if (volt_watt_current_curve_index > 1 ) 
+                        {
+                            fprintf(stdout, "!!!!xxxx!!!! mrid at index %d\n", volt_watt_set_curve_index);
+                            volt_watt_current_curve_index -= 1;
+                            volt_watt_set_curve_index = volt_watt_current_curve_index-1;
+                            fprintf(stdout, "!!!!xxxx!!!! Sending VOLT-WATT curve type %d info to OBCM at index %d\n", 
+                                   SL_XSD_CURVE_TYPE_VOLT_WATT, volt_watt_set_curve_index);
+                            setup_curve_to_obcm(sts2);
+                        }
+
+                    }
+                    else if (sts2 == SL_XSD_CURVE_TYPE_VOLT_VAR)
+                    {
+                        if (volt_var_current_curve_index > 1 ) 
+                        {
+                            fprintf(stdout, "!!!!xxxx!!!! mrid at index %d\n", volt_var_set_curve_index);
+                            volt_var_current_curve_index -= 1;
+                            volt_var_set_curve_index = volt_var_current_curve_index-1;
+                            fprintf(stdout, "!!!!xxxx!!!! Sending VOLT-VAR curve type %d info to OBCM at index %d\n", 
+                                    SL_XSD_CURVE_TYPE_VOLT_VAR, volt_var_set_curve_index);
+                            setup_curve_to_obcm(sts2);
+                        }
+
+                    }
+                }
+
+            }
+        }
+        else 
+        {
+            fprintf(stdout, "unsupported event received mrid => %s \n", mrid_text);
+            fprintf(stdout, "supported events opModFixedW, opModMaxLimW, and opModTargetW \n");
+        }
+        return;
+    }
+
+    if (derc_ind.derc.dercBase.opModFixedWExists)
+    {
+        tmp_evt_type = NODE_EVENT_TYPE_FIXEDW;
+    }
+    else if (derc_ind.derc.dercBase.opModMaxLimWExists)
+    {
+        tmp_evt_type = NODE_EVENT_TYPE_MAXLIMW;
+    }
+    else if (derc_ind.derc.dercBase.opModTargetWExists)
+    {
+        tmp_evt_type = NODE_EVENT_TYPE_TARGETW;
+    }
+
+    if (derc_ind.derc.dercBase.opModFixedWExists)
+    {
+        tmp_val = (int32_t)derc_ind.derc.dercBase.opModFixedW;
+    }
+    else if (derc_ind.derc.dercBase.opModMaxLimWExists)
+    {
+        tmp_val = (int32_t)derc_ind.derc.dercBase.opModMaxLimW;
+    }
+    else if (derc_ind.derc.dercBase.opModTargetWExists)
+    {
+        tmp_val = (int32_t)( derc_ind.derc.dercBase.opModTargetWValue * 
+            pow(10, derc_ind.derc.dercBase.opModTargetWMult));
+    }
 
     // debug
-    fprintf(stdout, "activeInfo eventRespStatus = %d \n", derc_ind.activeInfo.eventRespStatus);
-    fprintf(stdout, "DERC IND eventStatusCurrStatus = %d \n", derc_ind.eventStatusCurrStatus);
+    fprintf(stdout, "----->>>> recvd: mrid [%s] eventStatus = %d of type [%d] with value [%d] \n", 
+        mrid_text, derc_ind.activeInfo.eventRespStatus, tmp_evt_type, tmp_val);
+    
+    // if event mrid exits
+    //      //update status
+    // else 
+    //      add event to list
+    if (getStatusForEvent(mrid_text) != -1) 
+    {
+        if (derc_ind.activeInfo.eventRespStatus > 0)
+        {
+            updateStatusForEvent(mrid_text, derc_ind.activeInfo.eventRespStatus);
+        }
+    }
+    else 
+    {
+        addEvent(
+            mrid_text, derc_ind.activeInfo.eventRespStatus,
+            derc_ind.derc.randEvent.event.start, 
+            derc_ind.derc.randEvent.event.duration,
+            tmp_val,
+            tmp_evt_type
+        );
+    }
+
+    // // debug
+    // fprintf(stdout, "activeInfo eventRespStatus = %d \n", derc_ind.activeInfo.eventRespStatus);
+    // fprintf(stdout, "DERC IND eventStatusCurrStatus = %d \n", derc_ind.eventStatusCurrStatus);
 
     //if (derc_ind.eventStatusCurrStatus == SL_XSD_EVENT_CURR_STATUS_ACTIVE)
     if (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_STARTED)
     {
-        wset_pct_ena_704 = 1; // enable
         // in case there are previous events, this will allow it to continue till 
         // this event starts
-        enqueue_2(SSP_DER_WRITE_704_PARAMS);    
-        enqueue_2(SSP_DER_WRITE_704_ENABLE);
+        sts = setEventActive(mrid_text);
+        if (sts == -1) 
+        {
+            fprintf(stdout, "Failed to locate event %s in event list\n", mrid_text);
+            return;
+        }
+        eventChangeNotification();
     }
     else if (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_MSG_RXED)
     {
@@ -226,8 +615,25 @@ void get_derc_ind_data()
         (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_SUPERSEDED)
     )
     {
-        wset_pct_ena_704 = 0; // disable
-        enqueue_2(SSP_DER_WRITE_704_ENABLE);
+        sts = isEventActive(mrid_text); 
+        fprintf(stdout, "----->>>> recvd: mrid [%s] eventactive = %d\n", 
+            mrid_text, sts);
+        if (sts == 1) 
+        {
+            // wset_pct_ena_704 = 0; // disable
+            // enqueue_2(SSP_DER_WRITE_704_ENABLE);
+            sts = clearEventActive(mrid_text);
+            if (sts == 0) // cleared event
+            {
+                removeEvent(mrid_text);
+            }
+            else 
+            {
+                fprintf(stdout, "Failed to clear event %s of type %d \n", mrid_text, tmp_evt_type);
+            }
+        }
+        eventChangeNotification();
+
     }
 
 }
@@ -257,152 +663,12 @@ void get_freq_droop_data()
 
 }
 
-void get_curve_data()
+void setup_curve_to_obcm(u16_t curveType) 
 {
-    sl_der_curve_t curve = {0};
-    int len = sizeof(curve);
-    float *x_pts;
-    float *y_pts;
-    int *pts_count;
-    int *curve_received;
-    int ii;
-    float x_mul;
-    float y_mul;
-    i8_t tmp_i8t;
-    memcpy(&curve, recv_buf, len);
-
-    if (curve.curveType == SL_XSD_CURVE_TYPE_VOLT_WATT)
-    {
-        x_pts = &volt_watt_x[0];
-        y_pts = &volt_watt_y[0];
-        pts_count = &volt_watt_points_count;
-        curve_received = &volt_watt_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Watt curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_VOLT_VAR)
-    {
-        x_pts = &volt_var_x[0];
-        y_pts = &volt_var_y[0];
-        pts_count = &volt_var_points_count;
-        curve_received = &volt_var_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Var curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_WATT_VAR)
-    {
-        x_pts = &watt_var_x[0];
-        y_pts = &watt_var_y[0];
-        pts_count = &watt_var_points_count;
-        curve_received = &watt_var_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! Watt Var curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
-    {
-        x_pts = &low_volt_trip_x[0];
-        y_pts = &low_volt_trip_y[0];
-        pts_count = &low_volt_trip_points_count;
-        curve_received = &low_volt_trip_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Must Trip curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
-    {
-        x_pts = &low_volt_cess_x[0];
-        y_pts = &low_volt_cess_y[0];
-        pts_count = &low_volt_cess_points_count;
-        curve_received = &low_volt_cess_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Mome Cess curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
-    {
-        x_pts = &high_volt_trip_x[0];
-        y_pts = &high_volt_trip_y[0];
-        pts_count = &high_volt_trip_points_count;
-        curve_received = &high_volt_trip_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Must Trip curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
-    {
-        x_pts = &high_volt_cess_x[0];
-        y_pts = &high_volt_cess_y[0];
-        pts_count = &high_volt_cess_points_count;
-        curve_received = &high_volt_cess_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Mome Cess curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
-    {
-        x_pts = &low_freq_trip_x[0];
-        y_pts = &low_freq_trip_y[0];
-        pts_count = &low_freq_trip_points_count;
-        curve_received = &low_freq_trip_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! LFreq RT curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP)
-    {
-        x_pts = &high_freq_trip_x[0];
-        y_pts = &high_freq_trip_y[0];
-        pts_count = &high_freq_trip_points_count;
-        curve_received = &high_freq_trip_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! HFreq RT curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
-    {
-        x_pts = &low_volt_cess_x[0];
-        y_pts = &low_volt_cess_y[0];
-        pts_count = &low_volt_cess_points_count;
-        curve_received = &low_volt_cess_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Mom Cess curve processing\n");
-    }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
-    {
-        x_pts = &high_volt_cess_x[0];
-        y_pts = &high_volt_cess_y[0];
-        pts_count = &high_volt_cess_points_count;
-        curve_received = &high_volt_cess_curve_received;
-        // debug
-        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Mom Cess curve processing\n");
-    }
-    else
-    {
-        fprintf(stdout, "unsupported curve type %d. Unable to process this curve indication \n", curve.curveType);
-        return;
-    }
-
-    tmp_i8t = curve.xMultiplier;
-    if ((tmp_i8t < (i8_t)(-9)) || (tmp_i8t > (i8_t)(9)))
-    {
-        tmp_i8t = 0;
-    }
-    x_mul = (float)pow(10, tmp_i8t); // actual value to multiply by
-
-    tmp_i8t = curve.yMultiplier;
-   if ((tmp_i8t < (i8_t)(-9)) || (tmp_i8t > (i8_t)(9)))
-    {
-           tmp_i8t = 0;
-    }
-    y_mul = (float)pow(10, tmp_i8t); // actual value to multiply by
-
-    *pts_count = curve.numCurveData;
-    *pts_count = MIN(*pts_count, NUM_POINTS_CURVE); //  incase more points come, use only available values
-    for (ii = 0; ii < *pts_count; ii++)
-    {
-        x_pts[ii] = (float)(curve.curveData[ii].xValue * x_mul);
-        y_pts[ii] = (float)(curve.curveData[ii].yValue * y_mul);
-        fprintf(stdout, "[%d]: cx = %d, \t cy=%d \n", ii, curve.curveData[ii].xValue, curve.curveData[ii].yValue);
-        fprintf(stdout, "[%d]: x  = %.2f, \t y=%.2f \n", ii, x_pts[ii], y_pts[ii]);
-    }
-
-    *curve_received = 1;
-
-    if (curve.curveType == SL_XSD_CURVE_TYPE_VOLT_WATT)
+    // note: todo: adjust values from aggregator if multiplier is 0, than multiply vaules by 100
+    // if multiplier is -2, simply ignore the multiplier
+    fprintf("Setting up curve of type %d at OBCM \n", curveType);
+    if (curveType == SL_XSD_CURVE_TYPE_VOLT_WATT)
     {
         enqueue_2(SSP_3_READ_706_SF);
         enqueue_2(SSP_3_WRITE_706_PARAMS);
@@ -411,7 +677,7 @@ void get_curve_data()
         enqueue_2(SSP_3_READ_706_CURVE_VERIFY_RESP);
         enqueue_2(SSP_3_WRITE_706_CURVE_ENABLE);
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_VOLT_VAR)
+    else if (curveType == SL_XSD_CURVE_TYPE_VOLT_VAR)
     {
         enqueue_2(SSP_3_READ_705_SF);
         enqueue_2(SSP_3_WRITE_705_PARAMS_1);
@@ -421,7 +687,7 @@ void get_curve_data()
         enqueue_2(SSP_3_READ_705_CURVE_VERIFY_RESP);
         enqueue_2(SSP_3_WRITE_705_CURVE_ENABLE);
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_WATT_VAR)
+    else if (curveType == SL_XSD_CURVE_TYPE_WATT_VAR)
     {
         enqueue_2(SSP_3_READ_712_SF);
         enqueue_2(SSP_3_WRITE_712_PARAMS);
@@ -430,7 +696,7 @@ void get_curve_data()
         enqueue_2(SSP_3_READ_712_CURVE_VERIFY_RESP);
         enqueue_2(SSP_3_WRITE_712_CURVE_ENABLE);
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
+    else if (curveType == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
     {
         if (low_volt_cess_curve_received == 1) 
         {
@@ -443,7 +709,7 @@ void get_curve_data()
             enqueue_2(SSP_3_WRITE_707_CURVE_ENABLE);
         }
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
+    else if (curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
     {
         if (low_volt_trip_curve_received == 1)
         {
@@ -456,7 +722,7 @@ void get_curve_data()
             enqueue_2(SSP_3_WRITE_707_CURVE_ENABLE);
         }
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
+    else if (curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
     {
         if (high_volt_cess_curve_received == 1)
         {
@@ -469,7 +735,7 @@ void get_curve_data()
             enqueue_2(SSP_3_WRITE_708_CURVE_ENABLE);
         }
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
+    else if (curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
     {
         if (high_volt_trip_curve_received == 1) 
         {
@@ -482,7 +748,7 @@ void get_curve_data()
             enqueue_2(SSP_3_WRITE_708_CURVE_ENABLE);
         }
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
+    else if (curveType == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
     {
         enqueue_2(SSP_3_READ_709_SF);
         enqueue_2(SSP_3_WRITE_709_PARAMS);
@@ -491,7 +757,7 @@ void get_curve_data()
         enqueue_2(SSP_3_READ_709_CURVE_VERIFY_RESP);
         enqueue_2(SSP_3_WRITE_709_CURVE_ENABLE);
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP)
+    else if (curveType == SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP)
     {
         enqueue_2(SSP_3_READ_710_SF);
         enqueue_2(SSP_3_WRITE_710_PARAMS);
@@ -500,17 +766,336 @@ void get_curve_data()
         enqueue_2(SSP_3_READ_710_CURVE_VERIFY_RESP);
         enqueue_2(SSP_3_WRITE_710_CURVE_ENABLE);
     }
-    else if (curve.curveType == SL_XSD_CURVE_TYPE_FREQ_WATT)
+    else if (curveType == SL_XSD_CURVE_TYPE_FREQ_WATT)
     {
-        enqueue_2(SSP_3_READ_711_SF);
-        enqueue_2(SSP_3_WRITE_711_CURVE_DATA);
-        enqueue_2(SSP_3_WRITE_711_CURVE_VERIFY_REQ);
-        enqueue_2(SSP_3_READ_711_CURVE_VERIFY_RESP);
-        enqueue_2(SSP_3_WRITE_711_CURVE_ENABLE);
+        // enqueue_2(SSP_3_READ_711_SF);
+        // enqueue_2(SSP_3_WRITE_711_CURVE_DATA);
+        // enqueue_2(SSP_3_WRITE_711_CURVE_VERIFY_REQ);
+        // enqueue_2(SSP_3_READ_711_CURVE_VERIFY_RESP);
+        // enqueue_2(SSP_3_WRITE_711_CURVE_ENABLE);
     }
     else
     {
         // do nothing
+    }
+}
+
+void get_curve_data()
+{
+    // receving the sl_der_client_dc_ind indication since it contains the derc mrid
+    // sl_der_curve_t curve = {0};
+    sl_der_client_dc_ind curveInd = {0};
+    int len = sizeof(curveInd);
+    float *x_pts;
+    float *y_pts;
+    int *pts_count;
+    int *curve_received;
+    int ii;
+    float x_mul;
+    float y_mul;
+    i8_t tmp_i8t;
+    u8_t *assoc_derc;
+    bool setup_curve = false;
+    memcpy(&curveInd, recv_buf, len);
+
+  //debug only
+    fprintf(stdout, "pkt length recvd %d\n", len);
+    fprintf(stdout, "Data first four bytes, and last 4 bytes are: \n");
+    fprintf(stdout, "%2x, %2x, %2x, %2x, ......., %2x, %2x, %2x, %2x\n",
+    recv_buf[0], recv_buf[1], recv_buf[2], recv_buf[3], 
+    recv_buf[len-4], recv_buf[len-3], recv_buf[len-2], recv_buf[len-1]);
+
+
+    char mrid_text[256];  
+    charArrayToHexString(curveInd.curve.mrId, SL_XSD_MRID_LEN, mrid_text, 256);
+    fprintf(stdout, "received curve %d with mrid %s\n ", curveInd.curve.curveType, mrid_text);
+    charArrayToHexString(curveInd.dercMrid, SL_XSD_MRID_LEN, mrid_text, 256);
+    fprintf(stdout, "associated with mrid %s\n ", mrid_text);
+
+    if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_VOLT_WATT)
+    {
+        // has event started for curve 
+        for (ii=0 ; ii < volt_watt_current_curve_index; ii++)
+        {
+            if (memcmp(curveInd.dercMrid, volt_watt_curve_derc_mrid[ii], SL_XSD_MRID_LEN) == 0)
+            {
+                break;
+            }
+        }
+        if (ii == volt_var_current_curve_index) 
+        {
+            if (volt_watt_current_curve_index >= MAX_SUPERSEDE_EVENTS)
+            {
+                fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Watt curve processing: Max Number of supersede events reached. Ignoring this event\n");
+                return;
+            }
+        }
+
+        x_pts = &volt_watt_x[ii][0];
+        y_pts = &volt_watt_y[ii][0];
+        pts_count = &volt_watt_points_count[ii];
+        curve_received = &volt_watt_curve_received[ii];
+        assoc_derc = &volt_watt_curve_derc_mrid[ii];
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Watt curve processing\n");
+        if (ii == volt_var_current_curve_index)
+        {
+            volt_watt_current_curve_index++;
+        }
+        else 
+        {
+            // derc event already received, setup 
+            volt_watt_set_curve_index = ii;
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_VOLT_VAR)
+    {
+        // has event started for curve 
+        for (ii=0 ; ii < volt_var_current_curve_index; ii++)
+        {
+            if (memcmp(curveInd.dercMrid, volt_var_curve_derc_mrid[ii], SL_XSD_MRID_LEN) == 0)
+            {
+                break;
+            }
+        }
+        if (ii == volt_var_current_curve_index) 
+        {
+            if (volt_var_current_curve_index >= MAX_SUPERSEDE_EVENTS)
+            {
+                fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Var curve processing: Max Number of supersede events reached. Ignoring this event\n");
+                return;
+            }
+        }
+
+        x_pts = &volt_var_x[ii][0];
+        y_pts = &volt_var_y[ii][0];
+        pts_count = &volt_var_points_count[ii];
+        curve_received = &volt_var_curve_received[ii];
+        assoc_derc = &volt_var_curve_derc_mrid[ii];
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! Volt Var curve processing\n");
+        if (ii == volt_var_current_curve_index)
+        {
+            volt_var_current_curve_index++;
+        }
+        else 
+        {
+            // derc event already received, setup 
+            volt_var_set_curve_index = ii;
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_WATT_VAR)
+    {
+        ii = 0; // if it becomes ii, need to setup curve
+        if (memcmp(watt_var_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            // derc event already received
+            ii = 1;
+        }
+        x_pts = &watt_var_x[0];
+        y_pts = &watt_var_y[0];
+        pts_count = &watt_var_points_count;
+        curve_received = &watt_var_curve_received;
+        assoc_derc = watt_var_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! Watt Var curve processing\n");
+        if (ii == 1)
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MUST_TRIP)
+    {
+        ii = 0;
+        if (memcmp(low_volt_trip_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &low_volt_trip_x[0];
+        y_pts = &low_volt_trip_y[0];
+        pts_count = &low_volt_trip_points_count;
+        curve_received = &low_volt_trip_curve_received;
+        assoc_derc = low_volt_trip_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Must Trip curve processing\n");
+        if (ii == 1) 
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
+    {
+        ii = 0;
+        if (memcmp(low_volt_cess_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &low_volt_cess_x[0];
+        y_pts = &low_volt_cess_y[0];
+        pts_count = &low_volt_cess_points_count;
+        curve_received = &low_volt_cess_curve_received;
+        assoc_derc = low_volt_cess_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Mome Cess curve processing\n");
+        if (ii == 1)
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MUST_TRIP)
+    {
+        ii = 0;
+        if (memcmp(high_volt_trip_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &high_volt_trip_x[0];
+        y_pts = &high_volt_trip_y[0];
+        pts_count = &high_volt_trip_points_count;
+        curve_received = &high_volt_trip_curve_received;
+        assoc_derc = high_volt_trip_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Must Trip curve processing\n");
+        if (ii == 1) 
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
+    {
+        ii = 0;
+        if (memcmp(high_volt_cess_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &high_volt_cess_x[0];
+        y_pts = &high_volt_cess_y[0];
+        pts_count = &high_volt_cess_points_count;
+        curve_received = &high_volt_cess_curve_received;
+        assoc_derc = high_volt_cess_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Mome Cess curve processing\n");
+        if (ii == 1) 
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_LFRT_MUST_TRIP)
+    {
+        ii = 0;
+        if (memcmp(low_freq_trip_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &low_freq_trip_x[0];
+        y_pts = &low_freq_trip_y[0];
+        pts_count = &low_freq_trip_points_count;
+        curve_received = &low_freq_trip_curve_received;
+        assoc_derc = low_freq_trip_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LFreq RT curve processing\n");
+        if (ii == 1)
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_HFRT_MUST_TRIP)
+    {
+        ii = 0;
+        if (memcmp(high_freq_trip_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &high_freq_trip_x[0];
+        y_pts = &high_freq_trip_y[0];
+        pts_count = &high_freq_trip_points_count;
+        curve_received = &high_freq_trip_curve_received;
+        assoc_derc = high_freq_trip_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HFreq RT curve processing\n");
+        if (ii == 1) 
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_LVRT_MOM_CESS)
+    {
+        ii = 0;
+        if (memcmp(low_volt_cess_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &low_volt_cess_x[0];
+        y_pts = &low_volt_cess_y[0];
+        pts_count = &low_volt_cess_points_count;
+        curve_received = &low_volt_cess_curve_received;
+        assoc_derc = low_volt_cess_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! LVolt RT Mom Cess curve processing\n");
+        if (ii == 1)
+        {
+            setup_curve = true;
+        }
+    }
+    else if (curveInd.curve.curveType == SL_XSD_CURVE_TYPE_HVRT_MOM_CESS)
+    {
+        ii = 0;
+        if (memcmp(high_volt_cess_curve_derc_mrid, curveInd.dercMrid, SL_XSD_MRID_LEN) == 0)
+        {
+            ii = 1;
+        }
+        x_pts = &high_volt_cess_x[0];
+        y_pts = &high_volt_cess_y[0];
+        pts_count = &high_volt_cess_points_count;
+        curve_received = &high_volt_cess_curve_received;
+        assoc_derc = high_volt_cess_curve_derc_mrid;
+        // debug
+        fprintf(stdout, "<<<<xxxx>>>>!!!! HVolt RT Mom Cess curve processing\n");
+        if (ii == 1) 
+        {
+            setup_curve = true;
+        }
+    }
+    else
+    {
+        fprintf(stdout, "unsupported curve type %d. Unable to process this curve indication \n", curveInd.curve.curveType);
+        return;
+    }
+
+    tmp_i8t = curveInd.curve.xMultiplier;
+    if ((tmp_i8t < (i8_t)(-9)) || (tmp_i8t > (i8_t)(9)))
+    {
+        tmp_i8t = 0;
+    }
+    x_mul = (float)pow(10, tmp_i8t); // actual value to multiply by
+
+    tmp_i8t = curveInd.curve.yMultiplier;
+   if ((tmp_i8t < (i8_t)(-9)) || (tmp_i8t > (i8_t)(9)))
+    {
+           tmp_i8t = 0;
+    }
+    y_mul = (float)pow(10, tmp_i8t); // actual value to multiply by
+
+    *pts_count = curveInd.curve.numCurveData;
+    *pts_count = MIN(*pts_count, NUM_POINTS_CURVE); //  incase more points come, use only available values
+    for (ii = 0; ii < *pts_count; ii++)
+    {
+        x_pts[ii] = (float)(curveInd.curve.curveData[ii].xValue * x_mul);
+        y_pts[ii] = (float)(curveInd.curve.curveData[ii].yValue * y_mul);
+        fprintf(stdout, "[%d]: cx = %d, \t cy=%d \n", ii, curveInd.curve.curveData[ii].xValue, curveInd.curve.curveData[ii].yValue);
+        fprintf(stdout, "[%d]: x  = %.2f, \t y=%.2f \n", ii, x_pts[ii], y_pts[ii]);
+    }
+
+    *curve_received = 1;
+    if (setup_curve == false)
+    {
+        memcpy(assoc_derc, curveInd.dercMrid, SL_XSD_MRID_LEN);
+    }
+    else 
+    {
+        setup_curve_to_obcm(curveInd.curve.curveType);
     }
 }
 
@@ -1244,11 +1829,45 @@ void send_power_status_req()
     ps_req.pwrstat.estChargeRemainingExists = true;
     ps_req.pwrstat.estChargeRemaining = estimated_charge_remaining;
     ps_req.pwrstat.pevInfoExists = true;
-    ps_req.pwrstat.pevInfo.chargingPowerNow.value = obc_current_charging_pwr_w;
+    fprintf(stdout, "override power status %d\n", override_power_status);
+    if (override_power_status > 0)
+    {
+        if (override_charge_power_now > 0) 
+        {
+            ps_req.pwrstat.pevInfo.chargingPowerNow.value = override_charge_power_now;
+        }
+        else 
+        {
+            ps_req.pwrstat.pevInfo.chargingPowerNow.value = obc_current_charging_pwr_w;
+        }
+        // ps_req.pwrstat.pevInfo.chargingPowerNow.value = obc_current_charging_pwr_w;
+    }
+    else 
+    {
+        ps_req.pwrstat.pevInfo.chargingPowerNow.value = obc_current_charging_pwr_w;
+    }
+    fprintf(stdout, "charge power now %d\n", ps_req.pwrstat.pevInfo.chargingPowerNow.value);
     ps_req.pwrstat.pevInfo.chargingPowerNow.mult = SL_XSD_PTM_NONE;
     ps_req.pwrstat.pevInfo.energyRequestNow.value = energy_request_now_Wh;
     ps_req.pwrstat.pevInfo.energyRequestNow.mult = SL_XSD_PTM_NONE;
-    ps_req.pwrstat.pevInfo.maxForwardPower.value = obc_max_fwd_pwr_w;
+    if (override_power_status > 0)
+    {
+        if (override_max_forward_power > 0) 
+        {
+            ps_req.pwrstat.pevInfo.maxForwardPower.value = override_max_forward_power;
+        }
+        else 
+        {
+            ps_req.pwrstat.pevInfo.maxForwardPower.value = obc_max_fwd_pwr_w;
+        }
+        // ps_req.pwrstat.pevInfo.maxForwardPower.value = obc_max_fwd_pwr_w;
+    } 
+    else 
+    {
+        ps_req.pwrstat.pevInfo.maxForwardPower.value = obc_max_fwd_pwr_w;
+    }
+    fprintf(stdout, "max forward power %d\n", ps_req.pwrstat.pevInfo.maxForwardPower.value);
+    // ps_req.pwrstat.pevInfo.maxForwardPower.value = obc_max_fwd_pwr_w;
     ps_req.pwrstat.pevInfo.maxForwardPower.mult = SL_XSD_PTM_NONE;
     ps_req.pwrstat.pevInfo.minimumChargingDuration = minimum_charging_duration_secs;
     ps_req.pwrstat.pevInfo.targetStateOfCharge = target_soc;

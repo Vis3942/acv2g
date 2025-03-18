@@ -3,9 +3,11 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "sl_api.h"
 
 #define SSP_READ_REGISTER 0x01
 #define SSP_WRITE_REGISTER 0x0F
+#define MAX_SUPERSEDE_EVENTS   5
 
 // all tasks in the sequence to be added to queue
 #define SSP_1_0_RECEIVED_DERSETTINGS 0x01
@@ -131,6 +133,8 @@ extern int test_ss_model_regs_read_count;
 #define NUM_MODEL_CHARS 16*2
 #define NUM_VERSION_CHARS 8*2
 
+#define OBCM_VERIFY_TIMEOUT 3 // 2 seconds earlier seemed to time out
+
 // extern vars
 
 // DERSettings vars
@@ -176,6 +180,7 @@ extern short vnom_702;
 extern short vmax_702;
 extern short vmin_702;
 
+extern bool prev_ES;
 extern bool ES ; // default_derc.base.opmodenergize
 extern uint32_t ESHzHi ; // default_derc.setESHighFreq
 extern uint32_t ESVHi ; // default_derc.setESHighVolt
@@ -207,70 +212,84 @@ extern int freq_droop_curve_received; // valie is 1 if received
 extern int freq_droop_curve_verify; // 0 => still evaluating, 1 => complete (success), 2 => failed
 
 
-extern int volt_var_curve_received; // valie is 1 if received
-extern int volt_var_points_count ;
-extern float volt_var_x[NUM_POINTS_CURVE];
-extern float volt_var_y[NUM_POINTS_CURVE];
-extern int volt_var_curve_verify;
+extern int volt_var_curve_received[MAX_SUPERSEDE_EVENTS]; // valie is 1 if received
+extern int volt_var_points_count[MAX_SUPERSEDE_EVENTS];
+extern float volt_var_x[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+extern float volt_var_y[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+extern int volt_var_curve_verify[MAX_SUPERSEDE_EVENTS]; // 0 => still evaluating, 1 => complete (success), 2 => failed
+extern u8_t volt_var_curve_derc_mrid[MAX_SUPERSEDE_EVENTS][SL_XSD_MRID_LEN];
+extern int volt_var_set_curve_index;
+extern int volt_var_current_curve_index;
 
-extern int watt_var_curve_received ; // valie is 1 if received
-extern int watt_var_points_count ;
+extern int volt_watt_curve_received[MAX_SUPERSEDE_EVENTS]; // valie is 1 if received
+extern int volt_watt_points_count[MAX_SUPERSEDE_EVENTS];
+extern float volt_watt_x[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+extern float volt_watt_y[MAX_SUPERSEDE_EVENTS][NUM_POINTS_CURVE];
+extern int volt_watt_curve_verify[MAX_SUPERSEDE_EVENTS]; // 0 => still evaluating, 1 => complete (success), 2 => failed
+extern u8_t volt_watt_curve_derc_mrid[MAX_SUPERSEDE_EVENTS][SL_XSD_MRID_LEN];
+extern int volt_watt_current_curve_index;
+extern int volt_watt_set_curve_index;
+
+extern int watt_var_curve_received; // valie is 1 if received
+extern int watt_var_points_count;
 extern float watt_var_x[NUM_POINTS_CURVE];
 extern float watt_var_y[NUM_POINTS_CURVE];
-extern int watt_var_curve_verify;
-
-extern int volt_watt_curve_received; // valie is 1 if received
-extern int volt_watt_points_count ;
-extern float volt_watt_x[NUM_POINTS_CURVE];
-extern float volt_watt_y[NUM_POINTS_CURVE];
-extern int volt_watt_curve_verify;
+extern int watt_var_curve_verify; // 0 => still evaluating, 1 => complete (success), 2 => failed
+extern u8_t watt_var_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int low_volt_trip_curve_received ; // valie is 1 if received
 extern int low_volt_trip_points_count ;
 extern float low_volt_trip_x[NUM_POINTS_CURVE];
 extern float low_volt_trip_y[NUM_POINTS_CURVE];
 extern int low_volt_trip_curve_verify;
+extern u8_t low_volt_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int low_volt_cess_curve_received ; // valie is 1 if received
 extern int low_volt_cess_points_count ;
 extern float low_volt_cess_x[NUM_POINTS_CURVE];
 extern float low_volt_cess_y[NUM_POINTS_CURVE];
+extern u8_t low_volt_cess_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int high_volt_trip_curve_received ; // valie is 1 if received
 extern int high_volt_trip_points_count ;
 extern float high_volt_trip_x[NUM_POINTS_CURVE];
 extern float high_volt_trip_y[NUM_POINTS_CURVE];
 extern int high_volt_trip_curve_verify;
+extern u8_t high_volt_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int high_volt_cess_curve_received ; // valie is 1 if received
 extern int high_volt_cess_points_count ;
 extern float high_volt_cess_x[NUM_POINTS_CURVE];
 extern float high_volt_cess_y[NUM_POINTS_CURVE];
+extern u8_t high_volt_cess_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int low_freq_trip_curve_received ; // valie is 1 if received
 extern int low_freq_trip_points_count ;
 extern float low_freq_trip_x[NUM_POINTS_CURVE];
 extern float low_freq_trip_y[NUM_POINTS_CURVE];
 extern int low_freq_trip_curve_verify;
+extern u8_t low_freq_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int high_freq_trip_curve_received ; // valie is 1 if received
 extern int high_freq_trip_points_count ;
 extern float high_freq_trip_x[NUM_POINTS_CURVE];
 extern float high_freq_trip_y[NUM_POINTS_CURVE];
 extern int high_freq_trip_curve_verify;
+extern u8_t high_freq_trip_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int low_volt_cess_curve_received ; // valie is 1 if received
 extern int low_volt_cess_points_count ;
 extern float low_volt_cess_x[NUM_POINTS_CURVE];
 extern float low_volt_cess_y[NUM_POINTS_CURVE];
 extern int low_volt_cess_curve_verify;
+extern u8_t low_volt_cess_curve_derc_mrid[SL_XSD_MRID_LEN];
 
 extern int high_volt_cess_curve_received ; // valie is 1 if received
 extern int high_volt_cess_points_count ;
 extern float high_volt_cess_x[NUM_POINTS_CURVE];
 extern float high_volt_cess_y[NUM_POINTS_CURVE];
 extern int high_volt_cess_curve_verify;
-
+extern u8_t high_volt_cess_curve_derc_mrid[SL_XSD_MRID_LEN];
 extern uint16_t actype_sep2;
 
 /// 701 sf
