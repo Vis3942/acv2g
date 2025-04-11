@@ -2,9 +2,13 @@
 #define UTILS_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // version definition => byte major version.byte minor version 
-#define VERSION 0x0105 // version 1.5
+#define VERSION 0x0107 // version 1.7
+// 1.6 add functionality in V2H mode to set permitted to discharge as true and 
+//      skip waiting for all curves download for POWER STATUS with PEVInfo to be sent
+// 1.5 add override power status if specified in can_settings.txt file
 // 1.1 AND 1.2 SUPPORT LOGGGING CAN DATA TO CSV FILE ()
 // 1.3 ADD TIMESTAMP to end of can data log in csv file 
 #define ISMN_MF_MODEL "A142C4Pacifica15.5kWVersion21301" // do not use this use what is read from OBCM

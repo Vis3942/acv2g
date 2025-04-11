@@ -12,5 +12,7 @@ void init_queue_2 (void);
 void enqueue_2 (int value);
 int dequeue_2 ();
 int count_queue_2();
+void clear_queue(void);
+void clear_queue_2(void);
 
 #endif

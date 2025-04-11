@@ -13,6 +13,7 @@
 #include <linux/can/raw.h>
 
 
+#include "can2sep2.h"
 #include "usock_utils.h"
 #include "usock_server.h"
 #include "utils.h"
@@ -78,8 +79,11 @@ int32_t obc_max_fwd_pwr_w;
 int32_t obc_current_charging_pwr_w;
 int32_t obc_max_rvr_pwr_w;
 int32_t obc_esstat;
-int32_t obc_pilotfreq_type;
+int32_t obc_pilotfreq_type = (int32_t) V2G_MODE; // 1 => v2g, 2=> v2h
 int32_t obc_dcca;
+bool v2h_transition = false;
+bool v2g_transition = false;
+uint8_t vehicle_mode = (uint8_t) UNDEFINED_MODE; // 1 => v2g, 2=> v2h, 0 => undefined
 // need for SCE: END
 
 int32_t charge_percent; // 0=> do not charge/ di0scharge, -100 charge at 100%, -25 charge at 25%, 100 discharge at 100%
@@ -149,8 +153,9 @@ void disp_can_message(int id, char*data_recv){
 void can_message (int id, char *data_recv) {
   //int i, soc, capacity; uint32_t charge_rate; uint64_t average = 0;
   //double tmpdbl;
-  int tmpi;
+  int tmpi, ii;
   int16_t tmp16_t;
+  int32_t tmp32_t;
   int send_to_hcp = 0;
   char data[8];
   // debug
@@ -248,9 +253,51 @@ void can_message (int id, char *data_recv) {
     obc_max_rvr_pwr_w = data_recv[4] << 8;
     obc_max_rvr_pwr_w = obc_max_fwd_pwr_w + data_recv[5];
     obc_esstat = (data_recv[6] & 0xC0) >> 6;
-    obc_pilotfreq_type = (data_recv[6] & 0x30) >> 4;
+    tmp32_t = (data_recv[6] & 0x30) >> 4; // 1 is v2g 2 is v2h; ignore all other values
     obc_dcca = (data_recv[6] & 0x0C) >> 2;
     send_to_hcp = 0;
+    
+    if (obc_pilotfreq_type != tmp32_t)
+    {
+
+      // // pilot freq type has changed
+      // if (obc_pilotfreq_type == 0)
+      // {
+      //   if (tmp32_t == (int32_t)V2G_MODE)
+      //   {
+      //     v2g_transition = true;
+      //     v2h_transition = false;
+      //     fprintf(stdout, "-----XXXXXXXXXXXXXX------>>>>>>>  Pending V2G transition \n");
+      //   }
+      //   else if (tmp32_t == (int32_t)V2H_MODE)
+      //   {
+      //     v2h_transition = true;
+      //     v2g_transition = false;
+      //     fprintf(stdout, "-----XXXXXXXXXXXXXX------>>>>>>>  Pending V2H transition \n");
+      //   }
+      // }
+      // else if (obc_pilotfreq_type == (int32_t) V2H_MODE) 
+      // {
+      //   if (tmp32_t == (int32_t)V2G_MODE)
+      //   {
+      //     v2g_transition = true;
+      //     v2h_transition = false;
+      //     fprintf(stdout, "-----XXXXXXXXXXXXXX------>>>>>>>  Pending V2G transition \n");
+      //   }
+      // }
+      // else if (obc_pilotfreq_type == (int32_t) V2G_MODE) 
+      // {
+      //   if (tmp32_t == (int32_t)V2H_MODE)
+      //   {
+      //     v2h_transition = true;
+      //     v2g_transition = false;
+      //     fprintf(stdout, "-----XXXXXXXXXXXXXX------>>>>>>>  Pending V2H transition \n");
+      //   }
+      // }
+
+      obc_pilotfreq_type = tmp32_t;
+
+    }
     break;
   
   case SSP_CAN_RX_ID:
@@ -399,12 +446,70 @@ void can_message (int id, char *data_recv) {
     can_transmit((int)0x30F, data, 8);
     write_can_data_csv((int)0x30F, data);
     usleep(2500);
+    // if (v2h_transition) 
+    // {
+    //   tmpi = 2;
+    // }
+    // else if (v2g_transition)
+    // {
+    //   tmpi = 1;
+    // }
+    ii = high_freq_trip_curve_verify + low_freq_trip_curve_verify;
+    ii = ii + low_volt_trip_curve_verify + high_volt_trip_curve_verify;
+    ii = ii + volt_var_curve_verify[0] + volt_watt_curve_verify[0] + freq_droop_curve_verify;
+    if (ii >= 7) {
+      tmpi = 1;
+    } else {
+      tmpi = 0;
+    }
+    if (ES == 1) {
+      tmpi = tmpi + 2;
+    }
+    if (prev_ES == 1) {
+      tmpi = tmpi + 4;
+    }
+    if (evcc_es == 1) {
+      tmpi = tmpi + 8;
+    }
+    if (vehicle_mode == (uint8_t) V2G_MODE) {
+      tmpi = tmpi + 16;
+    }
+    if (vehicle_mode == (uint8_t) V2H_MODE) {
+      tmpi = tmpi + 32;
+    }
+
+
+    if (high_freq_trip_curve_verify) {
+      ii = 1;
+    }
+    else {
+      ii = 0;
+    }
+    if (low_freq_trip_curve_verify) {
+      ii = ii + 2;
+    }
+    if (low_volt_trip_curve_verify) {
+      ii = ii + 4;
+    }
+    if (high_volt_trip_curve_verify) {
+      ii = ii + 8;
+    }
+    if (volt_var_curve_verify[0]) {
+      ii = ii + 16;
+    }
+    if (volt_watt_curve_verify[0]) {
+      ii = ii + 32;
+    }
+    if (freq_droop_curve_verify) {
+      ii = ii + 64;
+    }
+
     data[0] = 0;
     data[1] = 0;
     data[2] = 0;
     data[3] = 0;
-    data[4] = 0;
-    data[5] = 0;
+    data[4] = ii; // curve verify
+    data[5] = (uint8_t)tmpi; 
     data[6] = (uint8_t)get_ss_proto_task_id(); // ss proto task id
     data[7] = (uint8_t)get_current_state(); // ss proto can state
     can_transmit((int)0x329, data, 8);
@@ -918,6 +1023,10 @@ void init_ssproto()
        (test_der_avail == -1) && (!test_ss_curve_data) 
      ) 
   {
+    vehicle_mode = (uint8_t)V2G_MODE;
+    prev_ES = 1;
+    ES = 0;    
+    current_proto_task_id = 0;
     enqueue(SSP_1_0_RECEIVED_DERSETTINGS);
     enqueue(SSP_2_0_READ_702_SF);
     enqueue(SSP_2_1A_READ_702_NAMEPLATE_PART1);
@@ -947,6 +1056,27 @@ void init_ssproto()
     fprintf(stdout, "test der avail = %d, test ss curve data = %d\n",test_der_avail, test_ss_curve_data);
   }
 
+}
+
+void init_ssproto_v2h() 
+{
+  if ( (!test_ss_proto_can) && (!test_custom_ss_model_read) && 
+       (test_der_avail == -1) && (!test_ss_curve_data) 
+     ) 
+  {
+    vehicle_mode = (uint8_t)V2H_MODE;
+    prev_ES = 0;
+    ES = 1;    
+    enqueue(SSP_5_2_WRITE_703_ES);
+    enqueue(SSP_6_1_READ_701_REPORT_VALUE);
+    enqueue(SSP_6_2_READ_701_STATUS_VALUE);
+  }
+  else 
+  {
+    fprintf(stdout, "Regular init dd proto aborted for test scenarios\n");
+    fprintf(stdout, "test ss proto can = %d, custom ss model read = %d\n",test_ss_proto_can, test_custom_ss_model_read);
+    fprintf(stdout, "test der avail = %d, test ss curve data = %d\n",test_der_avail, test_ss_curve_data);
+  }
 }
 
 void setup_proto_timerfd()

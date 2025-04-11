@@ -117,6 +117,60 @@ int dequeue () // returns -1 on error
     return tmpi;
 }
 
+
+void clear_queue(void)
+{
+    while (dequeue() != -1) {
+        // Dequeue until the queue is empty
+    }
+}
+
+void clear_queue_2(void)
+{
+    while (dequeue_2() != -1) {
+        // Dequeue until the queue is empty
+    }
+}
+
+// void clear_queue(void)
+// {
+//     struct element *ptr, *next;
+
+//     if (!tail_q1) {
+//         return;
+//     }
+
+//     ptr = tail_q1->next;
+//     while (ptr != tail_q1) {
+//         next = ptr->next;
+//         free(ptr);
+//         ptr = next;
+//     }
+//     free(tail_q1);
+//     tail_q1 = NULL;
+//     num_elements_q1 = 0;
+// }
+
+
+// void clear_queue_2(void)
+// {
+//     struct element *ptr, *next;
+
+//     if (!tail_q2) {
+//         return;
+//     }
+
+//     ptr = tail_q2->next;
+//     while (ptr != tail_q2) {
+//         next = ptr->next;
+//         free(ptr);
+//         ptr = next;
+//     }
+//     free(tail_q2);
+//     tail_q2 = NULL;
+//     num_elements_q2 = 0;
+// }
+
 void print_queue (void)
 {
 

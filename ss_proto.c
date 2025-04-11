@@ -2717,15 +2717,30 @@ void ss_init_task(int task_id)
             // do nothing
             break;
         case SSP_5_2_WRITE_703_ES:
-            ii = high_freq_trip_curve_verify + low_freq_trip_curve_verify;
-            ii = ii + low_volt_trip_curve_verify + high_volt_trip_curve_verify;
-            ii = ii + volt_var_curve_verify[0] + volt_watt_curve_verify[0] + freq_droop_curve_verify;
-            fprintf(stdout, "HF trip = %d, LF trip = %d\n", high_freq_trip_curve_verify, low_freq_trip_curve_verify);
-            fprintf(stdout, "HV trip = %d, LV trip = %d\n", high_volt_trip_curve_verify, low_volt_trip_curve_verify);
-            fprintf(stdout, "volt var = %d, volt watt = %d, freq droop = %d\n" ,
-                volt_var_curve_verify[0], volt_watt_curve_verify[0], freq_droop_curve_verify);
-            fprintf(stdout, "------\nprevES = %d, ES = %d, sum ii = %d\n" ,prev_ES, ES, ii);
-            if (ii >= 7 )  //7) 
+            if (vehicle_mode == (uint8_t)V2G_MODE) 
+            {
+                ii = high_freq_trip_curve_verify + low_freq_trip_curve_verify;
+                ii = ii + low_volt_trip_curve_verify + high_volt_trip_curve_verify;
+                ii = ii + volt_var_curve_verify[0] + volt_watt_curve_verify[0] + freq_droop_curve_verify;
+                fprintf(stdout, "HF trip = %d, LF trip = %d\n", high_freq_trip_curve_verify, low_freq_trip_curve_verify);
+                fprintf(stdout, "HV trip = %d, LV trip = %d\n", high_volt_trip_curve_verify, low_volt_trip_curve_verify);
+                fprintf(stdout, "volt var = %d, volt watt = %d, freq droop = %d\n" ,
+                    volt_var_curve_verify[0], volt_watt_curve_verify[0], freq_droop_curve_verify);
+                fprintf(stdout, "------\nprevES = %d, ES = %d, sum ii = %d\n" ,prev_ES, ES, ii);
+                if (ii >= 7 )  //7) 
+                {
+                    if (prev_ES != ES) 
+                    {
+                        write_es_status_default_dercontrol_step5();
+                        start_ss_can_proto();
+                    }
+                }
+                // else 
+                // {
+                //     enqueue(SSP_5_2_WRITE_703_ES);
+                // }
+            }
+            else if (vehicle_mode == (uint8_t) V2H_MODE)
             {
                 if (prev_ES != ES) 
                 {
@@ -2733,10 +2748,10 @@ void ss_init_task(int task_id)
                     start_ss_can_proto();
                 }
             }
-            // else 
-            // {
-            //     enqueue(SSP_5_2_WRITE_703_ES);
-            // }
+            else 
+            {
+
+            }
             break;
         case SSP_6_1_READ_701_REPORT_VALUE:
             read_params_model701();
@@ -3641,27 +3656,54 @@ void ss_proto_task()
     }
     if (do_next_task) 
     {
-        num_items_queue2 = count_queue_2();
-        // load and execute the next task
-        if ( 
-            (current_proto_task_id > SSP_3_RECEIVED_DEFAULT_DERCONTROL) &&
-            (num_items_queue2 > 0)
-        )
-        {
-            tmp_queue_val = dequeue_2();
-            if (tmp_queue_val != -1)
+        // if (v2h_transition == true) 
+        // {
+        //     // remove all remaining tasks from queue and queue_2
+        //     clear_queue();
+        //     //clear_queue_2();
+        //     v2h_transition = false;
+        //     init_ssproto_v2h();
+        //     fprintf(stdout, "------XXXXXX---->>>>>   Initialized V2H process \n");
+        //     // initialize queue with 151, 152, 153
+        //     //return;
+        // } else if (v2g_transition == true) 
+        // {
+        //     // remove all remaining tasks from queue and queue_2
+        //     clear_queue();
+        //     //clear_queue_2();
+        //     init_ssproto();
+        //     v2g_transition = false;
+        //     fprintf(stdout, "------XXXXXX---->>>>>   Initialized V2G process \n");
+        // }
+        // if (vehicle_mode == (uint8_t) V2H_MODE) {
+        //     tmp_queue_val = dequeue();
+        //     if (tmp_queue_val != -1) 
+        //     {
+        //         ss_init_task(tmp_queue_val);
+        //     }
+        // } else {
+            num_items_queue2 = count_queue_2();
+            // load and execute the next task
+            if ( 
+                (current_proto_task_id > SSP_3_RECEIVED_DEFAULT_DERCONTROL) &&
+                (num_items_queue2 > 0)
+            )
             {
-                ss_init_task(tmp_queue_val);
+                tmp_queue_val = dequeue_2();
+                if (tmp_queue_val != -1)
+                {
+                    ss_init_task(tmp_queue_val);
+                }
             }
-        }
-        else 
-        {
-            tmp_queue_val = dequeue();
-            if (tmp_queue_val != -1) 
+            else 
             {
-                ss_init_task(tmp_queue_val);
-            }
-        }
+                tmp_queue_val = dequeue();
+                if (tmp_queue_val != -1) 
+                {
+                    ss_init_task(tmp_queue_val);
+                }
+            }        
+        // }
     }
 }
 

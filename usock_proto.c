@@ -200,9 +200,9 @@ void eventChangeNotification()
     if (fixedWEventExists() == 1) 
     {
         // then computeActivePowerPercent
-        fprintf(stdout, "$$$$%%%%% => Active Power event exists, compute active power percent\n");
+        fprintf(stdout, "$$$$ => Active Power event exists, compute active power percent\n");
         tmp_wset_pct_704 = ComputeActivePowerPercent();
-        fprintf(stdout, "$$$$%%%%% => computed active power percent %d, actual wset_pct = %d \n", tmp_wset_pct_704, wset_pct_704);
+        fprintf(stdout, "$$$$ => computed active power percent %d, actual wset_pct = %d \n", tmp_wset_pct_704, wset_pct_704);
         if (tmp_wset_pct_704 != wset_pct_704)
         {
             wset_pct_704 = tmp_wset_pct_704;    //(int)(derc_ind.derc.dercBase.opModFixedW/100);
@@ -488,9 +488,9 @@ void get_derc_ind_data()
             else if (
                 // ignore opt-out and superseded
                 (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_COMPLETED) ||
-                //(derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_OPT_OUT) ||
-                (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_CANCELED)
-                //(derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_SUPERSEDED)
+                (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_OPT_OUT) ||
+                (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_CANCELED) ||
+                (derc_ind.activeInfo.eventRespStatus == SL_XSD_RESP_STATUS_EVENT_SUPERSEDED)
             )
             {
                 sts2 = get_curve_type_for_derc_mrid(derc_ind.derc.randEvent.event.mrId, sts);
@@ -1823,6 +1823,12 @@ void send_power_status_req()
 {
     // SL_EPWRSTAT_CLIENT_SEND_PS_REQ
     sl_epwrstat_client_send_ps_req ps_req = {0};
+
+    if (obc_max_fwd_pwr_w < 2) 
+    {
+        return;
+    }
+
     ps_req.pwrstat.batteryStatus = battery_status;
     ps_req.pwrstat.changedTime = (i64_t)changed_time;
     ps_req.pwrstat.currentPowerSource = current_power_source;

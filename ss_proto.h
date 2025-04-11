@@ -327,6 +327,8 @@ extern bool before_override_comm_status;
 extern int server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
 extern int before_override_server_status; // 0=> not found, 1 => found, 2 => searching, -1 => just initialized
 
+extern int current_proto_task_id;
+
 void process_recv_message_ssproto();
 int get_ss_proto_task_id();
 void ss_proto_task();
